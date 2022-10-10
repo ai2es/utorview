@@ -17,18 +17,18 @@
     let wofs_proj = "+proj=lcc +lat_0=38.336433 +lon_0=-101 +lat_1=32 +lat_2=46 +a=6370000 +b=6370000 +ellps=WGS84"
     async function init() {
 
-        let json_filename = "wofs_ml_20190508.json"
-        let hrrr_json = await d3.json(json_filename);
-        let total_grid_cells = hrrr_json['rows'].length
-        let coord = proj4(orig_proj, wofs_proj, hrrr_json['se_coords'])
+        let json_filename = "wofs_ml_20190508_w_probs.json"
+        let json = await d3.json(json_filename);
+        let total_grid_cells = json['rows'].length
+        let coord = proj4(orig_proj, wofs_proj, json['se_coords'])
         let lon_array_m = create_coord_array(coord[0], wofs_x_length, resolution)
         let lat_array_m = create_coord_array(coord[1], wofs_y_length, resolution)
-        let dict3 = create_geom_object(hrrr_json["rows"], hrrr_json["columns"])
+        let plot_data = create_geom_object(json["rows"], json["columns"])
 
         let data = [{type: "choroplethmapbox",
-            locations: d3.range(total_grid_cells),
-            z: Array(total_grid_cells).fill(1),
-            geojson: dict3}];
+                    locations: d3.range(total_grid_cells),
+                    z: json['probabilities'],
+                    geojson: plot_data}];
         let layout = {
             mapbox: {
                 style: "open-street-map",
