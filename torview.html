@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html land="en">
+<head>
+    <link rel="stylesheet" href="style.css">
+    <title>WoFS U-Net Tornado Viewer</title>
+<script src="https://d3js.org/d3.v7.min.js"></script>
+<script src="https://cdn.plot.ly/plotly-2.11.1.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.8.0/proj4.js"></script>
+<!--<script src="stormdata.js"></script>-->
+<script>
+
+    let x_coord, y_coord;
+    let wofs_x_length = 300;
+    let wofs_y_length = 300;
+    let resolution = 3000;
+    let orig_proj = "WGS84"
+    let wofs_proj = "+proj=lcc +lat_0=38.336433 +lon_0=-101 +lat_1=32 +lat_2=46 +a=6370000 +b=6370000 +ellps=WGS84"
+    async function init() {
+
+        let json_filename = "wofs_ml_20190508.json"
+        let hrrr_json = await d3.json(json_filename);
+        let total_grid_cells = hrrr_json['rows'].length
+        let coord = proj4(orig_proj, wofs_proj, hrrr_json['se_coords'])
+        let lon_array_m = create_coord_array(coord[0], wofs_x_length, resolution)
+        let lat_array_m = create_coord_array(coord[1], wofs_y_length, resolution)
+        let dict3 = create_geom_object(hrrr_json["rows"], hrrr_json["columns"])
+
+        let data = [{type: "choroplethmapbox",
+            locations: d3.range(total_grid_cells),
+            z: Array(total_grid_cells).fill(1),
+            geojson: dict3}];
+        let layout = {
+            mapbox: {
+                style: "open-street-map",
+                center: {lon: -84, lat: 30},
+                zoom: 4
+            },
+            marker: {line: {color: "blue"}},
+            showlegend: true,
+            height: 1200,
+            width: 1800,
+            // coloraxis: {showscale: false, colorscale: "Viridis"}
+        };
+        function create_coord_array(coord, len, resolution) {
+            var array = [];
+            array.length = len
+            for (i=0; i<len; i++) {
+                array[i] = coord + (resolution * i);
+            }
+            return array
+        }
+
+        function create_geom(i, j, resolution) {
+
+            radius = resolution / 2
+            south_lat_m = lat_array_m[i] - radius
+            north_lat_m = lat_array_m[i] + radius
+            west_lon_m = lon_array_m[j] - radius
+            east_lon_m = lon_array_m[j] + radius
+
+            se = proj4(wofs_proj, orig_proj, [east_lon_m, south_lat_m])
+            ne = proj4(wofs_proj, orig_proj, [east_lon_m, north_lat_m])
+            sw = proj4(wofs_proj, orig_proj, [west_lon_m, south_lat_m])
+            nw = proj4(wofs_proj, orig_proj, [west_lon_m, north_lat_m])
+
+            return [sw, nw, ne, se, sw]}
+
+        function create_geom_object(i_indices, j_indices) {
+
+            let grid_obj = {type: "FeatureCollection", features: []}
+            for (index in d3.range(i_indices.length)) {
+                let geom = create_geom(i_indices[index], j_indices[index], resolution)
+                let grid_cell_obj = {type: "Feature",
+                                     id: index,
+                                     geometry: {type: "Polygon", coordinates: [geom]}}
+                grid_obj["features"].push(grid_cell_obj)
+            }
+            return grid_obj
+        }
+
+        Plotly.newPlot(document.getElementById("mapview"), data, layout);
+    }
+
+</script>
+<body onload="init()">
+<div id="mapview">
+</div>
+<div id="dvals">
+</div>
+</body>
+</html>
