@@ -15,74 +15,157 @@
     let resolution = 3000;
     let orig_proj = "WGS84"
     let wofs_proj = "+proj=lcc +lat_0=38.336433 +lon_0=-101 +lat_1=32 +lat_2=46 +a=6370000 +b=6370000 +ellps=WGS84"
+
     async function init() {
 
-        let json_filename = "wofs_ml_20190508_w_probs.json"
-        let json = await d3.json(json_filename);
+        let json = await load_data()
         let total_grid_cells = json['rows'].length
-        let coord = proj4(orig_proj, wofs_proj, json['se_coords'])
-        let lon_array_m = create_coord_array(coord[0], wofs_x_length, resolution)
-        let lat_array_m = create_coord_array(coord[1], wofs_y_length, resolution)
-        let plot_data = create_geom_object(json["rows"], json["columns"])
-
+        let plot_data = build_data_object(json)
         let data = [{type: "choroplethmapbox",
                     locations: d3.range(total_grid_cells),
-                    marker: {line: {width: 0}, opacity: 0.7},
+                    marker: {line: {width: 0},
+                             opacity: 0.7},
                     z: json['probabilities'],
                     geojson: plot_data}];
         let layout = {
             mapbox: {
                 style: "open-street-map",
-                center: {lon: -84, lat: 30},
-                zoom: 4
-            },
+                center: {lon: -96, lat: 35},
+                zoom: 5},
             showlegend: true,
             height: 1200,
-            width: 1800,
-            // coloraxis: {showscale: false, colorscale: "Viridis"}
-        };
-        function create_coord_array(coord, len, resolution) {
-            var array = [];
-            array.length = len
-            for (i=0; i<len; i++) {
-                array[i] = coord + (resolution * i);
-            }
-            return array
-        }
-
-        function create_geom(i, j, resolution) {
-
-            radius = resolution / 2
-            south_lat_m = lat_array_m[i] - radius
-            north_lat_m = lat_array_m[i] + radius
-            west_lon_m = lon_array_m[j] - radius
-            east_lon_m = lon_array_m[j] + radius
-
-            se = proj4(wofs_proj, orig_proj, [east_lon_m, south_lat_m])
-            ne = proj4(wofs_proj, orig_proj, [east_lon_m, north_lat_m])
-            sw = proj4(wofs_proj, orig_proj, [west_lon_m, south_lat_m])
-            nw = proj4(wofs_proj, orig_proj, [west_lon_m, north_lat_m])
-
-            return [sw, nw, ne, se, sw]}
-
-        function create_geom_object(i_indices, j_indices) {
-
-            let grid_obj = {type: "FeatureCollection", features: []}
-            for (index in d3.range(i_indices.length)) {
-                let geom = create_geom(i_indices[index], j_indices[index], resolution)
-                let grid_cell_obj = {type: "Feature",
-                                     id: index,
-                                     geometry: {type: "Polygon", coordinates: [geom]}}
-                grid_obj["features"].push(grid_cell_obj)
-            }
-            return grid_obj
-        }
+            width: 1800};
 
         Plotly.newPlot(document.getElementById("mapview"), data, layout);
     }
 
+    async function update() {
+
+        let json = await load_data()
+        let total_grid_cells = json['rows'].length
+        let plot_data = build_data_object(json)
+        console.log(document.getElementById("mapview").layout)
+
+        let data = [{type: "choroplethmapbox",
+            locations: d3.range(total_grid_cells),
+            marker: {line: {width: 0},
+                     opacity: 0.7},
+            z: json['probabilities'],
+            geojson: plot_data}];
+
+        Plotly.react(document.getElementById("mapview"), data, document.getElementById("mapview").layout);
+    }
+
+    function get_file_string() {
+
+        let run_date = document.getElementById("model_run").value;
+        let ens_member = document.getElementById("ens_mem").value;
+        let valid_time = document.getElementById("valid_time").value;
+        file_str = "data/" + run_date + "00/" + "ENS_MEM_" + ens_member + "/wofs_probs_sparse_" + run_date.slice(0, -2) +
+            "_" + run_date.slice(-2,) + valid_time + "00.json"
+        return file_str
+    }
+
+    function load_data() {
+
+        let j = d3.json(get_file_string());
+
+        return j
+    }
+
+    function build_data_object(data) {
+
+        let coord = proj4(orig_proj, wofs_proj, data['se_coords'])
+        let lon_array_m = create_coord_array(coord[0], wofs_x_length, resolution)
+        let lat_array_m = create_coord_array(coord[1], wofs_y_length, resolution)
+        let plot_data = create_geom_object(data["rows"], data["columns"], lon_array_m, lat_array_m)
+
+        return plot_data
+    }
+
+    function create_coord_array(coord, len, resolution) {
+        var array = [];
+        array.length = len
+        for (i=0; i<len; i++) {
+            array[i] = coord + (resolution * i);
+        }
+        return array
+    }
+
+    function create_geom(i, j, lons, lats, resolution) {
+
+        radius = resolution / 2
+        south_lat_m = lats[i] - radius
+        north_lat_m = lats[i] + radius
+        west_lon_m = lons[j] - radius
+        east_lon_m = lons[j] + radius
+
+        se = proj4(wofs_proj, orig_proj, [east_lon_m, south_lat_m])
+        ne = proj4(wofs_proj, orig_proj, [east_lon_m, north_lat_m])
+        sw = proj4(wofs_proj, orig_proj, [west_lon_m, south_lat_m])
+        nw = proj4(wofs_proj, orig_proj, [west_lon_m, north_lat_m])
+
+        return [sw, nw, ne, se, sw]}
+
+    function create_geom_object(i_indices, j_indices, lons, lats) {
+
+        let grid_obj = {type: "FeatureCollection", features: []}
+        for (index in d3.range(i_indices.length)) {
+            let geom = create_geom(i_indices[index], j_indices[index], lons, lats, resolution)
+            let grid_cell_obj = {type: "Feature",
+                                 id: index,
+                                 geometry: {type: "Polygon", coordinates: [geom]}}
+            grid_obj["features"].push(grid_cell_obj)
+        }
+        return grid_obj
+    }
+
 </script>
 <body onload="init()">
+<div id="menubar">
+    <label for="model_run">Model Run: </label>
+    <select id="model_run" name="model_run" onchange="update()">
+        <option value="2019052100" selected>2019-05-21-0000</option>
+        <option value="2019052101">2019-05-21-0100</option>
+        <option value="2019052102">2019-05-21-0200</option>
+    </select>
+    <label for="ens_mem">Ensemble Member: </label>
+    <select id="ens_mem" name="ens_mem" onchange="update()">
+        <option value="1" selected>Member 1</option>
+        <option value="2">Member 2</option>
+        <option value="3">Member 3</option>
+        <option value="4">Member 4</option>
+        <option value="5">Member 5</option>
+        <option value="6">Member 6</option>
+        <option value="7">Member 7</option>
+        <option value="8">Member 8</option>
+        <option value="9">Member 9</option>
+        <option value="10">Member 10</option>
+        <option value="11">Member 11</option>
+        <option value="12">Member 12</option>
+        <option value="13">Member 13</option>
+        <option value="14">Member 14</option>
+        <option value="15">Member 15</option>
+        <option value="16">Member 16</option>
+        <option value="17">Member 17</option>
+        <option value="18">Member 18</option>
+    </select>
+    <label for="valid_time">Valid Time: </label>
+    <select id="valid_time" name="valid_time" onchange="update()">
+        <option value="00" selected>00:00</option>
+        <option value="05">00:05</option>
+        <option value="10">00:10</option>
+        <option value="15">00:15</option>
+        <option value="20">00:20</option>
+        <option value="25">00:25</option>
+        <option value="30">00:30</option>
+        <option value="35">00:35</option>
+        <option value="40">00:40</option>
+        <option value="45">00:45</option>
+        <option value="50">00:50</option>
+        <option value="55">00:55</option>
+    </select>
+</div>
 <div id="mapview">
 </div>
 <div id="dvals">
