@@ -26,13 +26,15 @@
                     marker: {line: {width: 0},
                              opacity: 0.7},
                     z: json['probabilities'],
+                    zmin: 0, zmax: 1,
                     geojson: plot_data}];
         let layout = {
+            title: "Probability of Tornado",
             mapbox: {
                 style: "open-street-map",
                 center: {lon: -96, lat: 35},
                 zoom: 5},
-            showlegend: true,
+            showlegend: false,
             height: 1200,
             width: 1800};
 
@@ -50,13 +52,13 @@
         let json = await load_data()
         let total_grid_cells = json['rows'].length
         let plot_data = build_data_object(json)
-        console.log(document.getElementById("mapview").layout)
 
         let data = [{type: "choroplethmapbox",
             locations: d3.range(total_grid_cells),
             marker: {line: {width: 0},
                      opacity: 0.7},
             z: json['probabilities'],
+            zmin: 0, zmax: 1,
             geojson: plot_data}];
 
         Plotly.react(document.getElementById("mapview"), data, document.getElementById("mapview").layout);
@@ -189,6 +191,9 @@
     </select>
 </div>
 <div id="mapview">
+</div>
+</div>
+<div id="spaghetti">
 </div>
 <div id="dvals">
 </div>
