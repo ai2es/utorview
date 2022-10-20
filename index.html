@@ -6,10 +6,10 @@
 <script src="https://d3js.org/d3.v7.min.js"></script>
 <script src="https://cdn.plot.ly/plotly-2.11.1.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.8.0/proj4.js"></script>
+<!--<script src="https://cdn.jsdelivr.net/gh/nicolaspanel/numjs@0.15.1/dist/numjs.min.js"></script>-->
 <!--<script src="stormdata.js"></script>-->
 <script>
 
-    let x_coord, y_coord;
     let wofs_x_length = 300;
     let wofs_y_length = 300;
     let resolution = 3000;
@@ -36,7 +36,13 @@
             height: 1200,
             width: 1800};
 
-        Plotly.newPlot(document.getElementById("mapview"), data, layout);
+        await Plotly.newPlot(document.getElementById("mapview"), data, layout);
+
+        document.addEventListener('keypress', function(event) {
+            let code = event.code;
+            if (code === "Period") {update_time("forward");}
+            if (code === "Comma") {update_time("backward");}},
+            false);
     }
 
     async function update() {
@@ -79,7 +85,6 @@
         let lon_array_m = create_coord_array(coord[0], wofs_x_length, resolution)
         let lat_array_m = create_coord_array(coord[1], wofs_y_length, resolution)
         let plot_data = create_geom_object(data["rows"], data["columns"], lon_array_m, lat_array_m)
-
         return plot_data
     }
 
@@ -118,6 +123,23 @@
             grid_obj["features"].push(grid_cell_obj)
         }
         return grid_obj
+    }
+
+    function update_time(direction) {
+
+        let selectElement = document.querySelectorAll('[name=valid_time]');
+        let valid_times = [...selectElement[0].options].map(o => o.value)
+        let current = document.getElementById("valid_time").value;
+        let current_int = parseInt(current);
+        if (direction == "forward") {
+            new_time = String(current_int + 5).padStart(2, '0');
+            if (!valid_times.includes(new_time)) {new_time = valid_times[0]}}
+
+        if (direction == "backward") {
+            new_time = String(current_int - 5).padStart(2, '0');
+            if (!valid_times.includes(new_time)) {new_time = valid_times[valid_times.length - 1]}}
+        document.getElementById("valid_time").value = new_time;
+        update();
     }
 
 </script>
