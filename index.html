@@ -21,47 +21,177 @@
         let json = await load_data()
         let total_grid_cells = json['rows'].length
         let plot_data = build_data_object(json)
-        let data = [{type: "choroplethmapbox",
+        let plot_geom = plot_data[0]
+        let plot_coords = plot_data[1]
+
+        let map_data = {type: "choroplethmapbox",
                     locations: d3.range(total_grid_cells),
                     marker: {line: {width: 0},
                              opacity: 0.7},
                     z: json['probabilities'],
                     zmin: 0, zmax: 1,
-                    geojson: plot_data}];
+                    colorbar: {x: -0.05},
+                    hoverinfo: "z",
+                    customdata: plot_coords,
+                    // hovertemplate: "%{customdata}",
+                    geojson: plot_geom};
+
+        let blank_trace = {
+              x: [],
+              y: [],
+              xaxis: 'x2',
+              yaxis: 'y2',
+              type: 'scatter'
+            };
+
         let layout = {
             title: "Probability of Tornado",
             mapbox: {
                 style: "open-street-map",
                 center: {lon: -96, lat: 35},
                 zoom: 5},
-            showlegend: false,
-            height: 1200,
-            width: 1800};
-
-        await Plotly.newPlot(document.getElementById("mapview"), data, layout);
+            showlegend: true,
+            grid: {rows: 1, columns: 2, pattern: 'independent'},
+            height: 800,
+            legend: {
+                y: 1,
+                x: 0.95,
+                xaxis: 'x2',
+                yaxis: 'y2',
+                font: {size: 18}
+            }};
+            // width: 1800};
+        await Plotly.newPlot(document.getElementById("mapview"), [map_data, blank_trace], layout);
 
         document.addEventListener('keypress', function(event) {
             let code = event.code;
             if (code === "Period") {update_time("forward");}
             if (code === "Comma") {update_time("backward");}},
             false);
-    }
 
+        document.getElementById('mapview').on('plotly_click', async function(data) {
+
+            let pt = (data.points || [])[0]
+            let index = pt.customdata
+            let file_strings = get_ens_file_strings(5)
+            let spaghetti_data = await spaghetti(file_strings, index[0], index[1])
+            let traces = build_traces(spaghetti_data)
+            traces.unshift(map_data)
+            await Plotly.react(document.getElementById("mapview"), traces, layout);
+            });
+    }
     async function update() {
 
         let json = await load_data()
         let total_grid_cells = json['rows'].length
         let plot_data = build_data_object(json)
+        let plot_geom = plot_data[0]
+        let plot_coords = plot_data[1]
 
-        let data = [{type: "choroplethmapbox",
+        let blank_trace = {
+              x: [],
+              y: [],
+              xaxis: 'x2',
+              yaxis: 'y2',
+              type: 'scatter'
+            };
+
+        let data = {type: "choroplethmapbox",
             locations: d3.range(total_grid_cells),
             marker: {line: {width: 0},
                      opacity: 0.7},
             z: json['probabilities'],
             zmin: 0, zmax: 1,
-            geojson: plot_data}];
+            colorbar: {x: -0.05},
+            hoverinfo: "z",
+            customdata: plot_coords,
+            geojson: plot_geom};
 
-        Plotly.react(document.getElementById("mapview"), data, document.getElementById("mapview").layout);
+        Plotly.react(document.getElementById("mapview"), [data, blank_trace], document.getElementById("mapview").layout);
+    }
+
+    function build_traces(trace_data) {
+
+        let all_traces = []
+        for (i=1; i<=trace_data.length; i++) {
+            var trace = {
+              x: d3.range(73),
+              y: trace_data[i],
+              xaxis: 'x2',
+              yaxis: 'y2',
+              type: 'scatter',
+              showlegend: false,
+              line: {color: 'lightgrey', width: 1}
+            };
+            all_traces.push(trace)
+        }
+        var mean = {
+              name: "Mean",
+              x: d3.range(73),
+              y: trace_data["ens_mean"],
+              xaxis: 'x2',
+              yaxis: 'y2',
+              type: 'scatter',
+              line: {color: 'black', width: 4}
+            };
+            all_traces.push(mean)
+
+        var median = {
+              name: 'Median',
+              x: d3.range(73),
+              y: trace_data["ens_median"],
+              xaxis: 'x2',
+              yaxis: 'y2',
+              type: 'scatter',
+              line: {color: 'black', width: 2, dash: 'dot'}
+            };
+            all_traces.push(median)
+
+        return all_traces
+    }
+
+    async function spaghetti(file_strings, i, j) {
+
+        const calc_mean = array => array.reduce((a, b) => a + b) / array.length
+        const calc_median = (arr) => {return arr.slice().sort((a, b) => a - b)[Math.floor(arr.length / 2)]; };
+
+        let d = {'length': 18, 'ens_mean': [], 'ens_median': []}
+            for (k=0; k < file_strings.length; k++) {
+                let f = await d3.json("data/201905210000/" + file_strings[k])
+                ens_all_ts = []
+                for (m=1; m<19; m++) {
+                    if (k==0) { d[m] = [] }
+
+                    var mem = "MEM_" + String(m)
+                    var found = false
+                    let row_indices = f[mem]['rows'].flatMap((x, z) => x === i ? z : [])
+                    for (index=0; index<row_indices.length; index++) {
+                        if (f[mem]['columns'][row_indices[index]] === j) {
+                            d[m].push(f[mem]['probabilities'][row_indices[index]])
+                            found = true
+                        }
+                    }
+                    if (found === false) { d[m].push(0) }
+                    ens_all_ts.push(d[m][k])
+                }
+            let mean_ens = calc_mean(ens_all_ts)
+            let median_ens = calc_median(ens_all_ts)
+            d['ens_mean'].push(mean_ens)
+            d['ens_median'].push(median_ens)
+        }
+
+        return d
+        }
+
+
+    function get_ens_file_strings(interval) {
+
+        const formatTime = d3.timeFormat("%Y%m%d_%H%M00")
+        date_range = d3.timeMinutes(new Date(2019, 4, 21, 0),  new Date(2019, 4, 21, 6, 5), interval)
+        let file_list = [];
+        date_range.forEach(function(x) {file_list.push("wofs_all_members_" +formatTime(x) + ".json")})
+
+        return file_list;
     }
 
     function get_file_string() {
@@ -87,6 +217,7 @@
         let lon_array_m = create_coord_array(coord[0], wofs_x_length, resolution)
         let lat_array_m = create_coord_array(coord[1], wofs_y_length, resolution)
         let plot_data = create_geom_object(data["rows"], data["columns"], lon_array_m, lat_array_m)
+
         return plot_data
     }
 
@@ -116,15 +247,17 @@
 
     function create_geom_object(i_indices, j_indices, lons, lats) {
 
+        let coords = []
         let grid_obj = {type: "FeatureCollection", features: []}
         for (index in d3.range(i_indices.length)) {
+            coords.push([i_indices[index], j_indices[index]])
             let geom = create_geom(i_indices[index], j_indices[index], lons, lats, resolution)
             let grid_cell_obj = {type: "Feature",
                                  id: index,
                                  geometry: {type: "Polygon", coordinates: [geom]}}
             grid_obj["features"].push(grid_cell_obj)
         }
-        return grid_obj
+        return [grid_obj, coords]
     }
 
     function update_time(direction) {
