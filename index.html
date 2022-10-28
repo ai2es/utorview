@@ -213,7 +213,7 @@
             new Date(year, month, day, end_hour, 5), interval)
         let file_list = [];
         let init_time = document.getElementById("model_run").value.substring(0, 8)
-        date_range.forEach(function(x) {file_list.push("data_test2/" + init_time + start_hour + "00" +
+        date_range.forEach(function(x) {file_list.push("data/" + init_time + start_hour + "00" +
             "/wofs_sparse_prob_" +  init_time + formatTime(x) + ".json")});
         return file_list;
     }
