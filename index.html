@@ -13,22 +13,25 @@
     let wofs_x_length = 300;
     let wofs_y_length = 300;
     let resolution = 3000;
-    let orig_proj = "WGS84"
-    let wofs_proj = "+proj=lcc +lat_0=38.336433 +lon_0=-101 +lat_1=32 +lat_2=46 +a=6370000 +b=6370000 +ellps=WGS84"
+    let radius = resolution / 2;
+    let orig_proj = "WGS84";
+    let wofs_proj = "+proj=lcc +lat_0=38.336433 +lon_0=-101 +lat_1=32 +lat_2=46 +a=6370000 +b=6370000 +ellps=WGS84";
+    let transformer = proj4(wofs_proj, orig_proj);
 
     async function init() {
 
-        let json = await load_data()
-        let total_grid_cells = json['rows'].length
-        let plot_data = build_data_object(json)
+        json = await load_data();
+        plot_d = build_data_object(json);
+        let total_grid_cells = json['fm_5']['MEM_1']['rows'].length;
+        let plot_data = plot_d['5_1']
         let plot_geom = plot_data[0]
         let plot_coords = plot_data[1]
 
-        let map_data = {type: "choroplethmapbox",
+        map_data = {type: "choroplethmapbox",
                     locations: d3.range(total_grid_cells),
                     marker: {line: {width: 0},
                              opacity: 0.7},
-                    z: json['probabilities'],
+                    z: json['fm_0']['MEM_1']['probabilities'],
                     zmin: 0, zmax: 1,
                     colorbar: {x: -0.05},
                     hoverinfo: "z",
@@ -45,7 +48,7 @@
             };
 
         let layout = {
-            title: "Probability of Tornado",
+            title: get_title_timestamp(),
             mapbox: {
                 style: "open-street-map",
                 center: {lon: -96, lat: 35},
@@ -60,8 +63,8 @@
                 yaxis: 'y2',
                 font: {size: 18}
             }};
-            // width: 1800};
-        await Plotly.newPlot(document.getElementById("mapview"), [map_data, blank_trace], layout);
+
+        Plotly.newPlot(document.getElementById("mapview"), [map_data, blank_trace], layout);
 
         document.addEventListener('keypress', function(event) {
             let code = event.code;
@@ -69,24 +72,25 @@
             if (code === "Comma") {update_time("backward");}},
             false);
 
-        document.getElementById('mapview').on('plotly_click', async function(data) {
+        document.getElementById('mapview').on('plotly_click', async function(point_data) {
 
-            let pt = (data.points || [])[0]
+            let pt = (point_data.points || [])[0]
             let index = pt.customdata
-            let file_strings = get_ens_file_strings(5)
-            let spaghetti_data = await spaghetti(file_strings, index[0], index[1])
+            let spaghetti_data = await spaghetti(index[0], index[1])
             let traces = build_traces(spaghetti_data)
+
             traces.unshift(map_data)
             await Plotly.react(document.getElementById("mapview"), traces, layout);
             });
     }
+
     async function update() {
 
-        let json = await load_data()
-        let total_grid_cells = json['rows'].length
-        let plot_data = build_data_object(json)
-        let plot_geom = plot_data[0]
-        let plot_coords = plot_data[1]
+        let trace = select_trace()
+        let plot_geom = trace[1][0]
+        let plot_coords = trace[1][1]
+        let trace_values = trace[0]
+        let total_grid_cells = trace_values['rows'].length
 
         let blank_trace = {
               x: [],
@@ -96,24 +100,37 @@
               type: 'scatter'
             };
 
-        let data = {type: "choroplethmapbox",
+        map_data = {type: "choroplethmapbox",
             locations: d3.range(total_grid_cells),
             marker: {line: {width: 0},
                      opacity: 0.7},
-            z: json['probabilities'],
+            z: trace_values['probabilities'],
             zmin: 0, zmax: 1,
             colorbar: {x: -0.05},
             hoverinfo: "z",
             customdata: plot_coords,
             geojson: plot_geom};
 
-        Plotly.react(document.getElementById("mapview"), [data, blank_trace], document.getElementById("mapview").layout);
+        let layout = document.getElementById("mapview").layout
+        layout["title"] = get_title_timestamp()
+
+        Plotly.react(document.getElementById("mapview"), [map_data, blank_trace], layout);
+
+    }
+
+    function select_trace() {
+
+        let member = document.getElementById("ens_mem").value
+        let time = document.getElementById("forecast_minute").value
+        let p = json["fm_" + String(parseInt(time))]['MEM_' + member]
+        let geo = plot_d[String(parseInt(time)) + "_" + member]
+        return [p, geo]
     }
 
     function build_traces(trace_data) {
 
         let all_traces = []
-        for (i=1; i<=trace_data.length; i++) {
+        for (let i=1; i<=trace_data.length; i++) {
             var trace = {
               x: d3.range(73),
               y: trace_data[i],
@@ -150,121 +167,150 @@
         return all_traces
     }
 
-    async function spaghetti(file_strings, i, j) {
+    async function spaghetti(i, j) {
 
         const calc_mean = array => array.reduce((a, b) => a + b) / array.length
         const calc_median = (arr) => {return arr.slice().sort((a, b) => a - b)[Math.floor(arr.length / 2)]; };
 
         let d = {'length': 18, 'ens_mean': [], 'ens_median': []}
-            for (k=0; k < file_strings.length; k++) {
-                let f = await d3.json("data/201905210000/" + file_strings[k])
-                ens_all_ts = []
-                for (m=1; m<19; m++) {
-                    if (k==0) { d[m] = [] }
-
-                    var mem = "MEM_" + String(m)
+            for (m of d3.range(0, 365, 5)) {
+                let fm = "fm_" + m
+                let f = json[fm]
+                let ens_all_ts = []
+                for (mem=1; mem<19; mem++) {
+                    if (m===0) { d[mem] = [] }
+                    var member = "MEM_" + String(mem)
                     var found = false
-                    let row_indices = f[mem]['rows'].flatMap((x, z) => x === i ? z : [])
+                    let row_indices = f[member]['rows'].flatMap((xx, zqq) => xx === i ? zqq : [])
                     for (index=0; index<row_indices.length; index++) {
-                        if (f[mem]['columns'][row_indices[index]] === j) {
-                            d[m].push(f[mem]['probabilities'][row_indices[index]])
+                        if (f[member]['columns'][row_indices[index]] === j) {
+                            d[mem].push(f[member]['probabilities'][row_indices[index]])
                             found = true
                         }
                     }
-                    if (found === false) { d[m].push(0) }
-                    ens_all_ts.push(d[m][k])
+                    if (found === false) { d[mem].push(0) }
+                    ens_all_ts.push(d[mem][m/5])
                 }
-            let mean_ens = calc_mean(ens_all_ts)
+            var mean_ens = calc_mean(ens_all_ts)
             let median_ens = calc_median(ens_all_ts)
             d['ens_mean'].push(mean_ens)
             d['ens_median'].push(median_ens)
         }
-
+            console.log(d)
         return d
         }
 
-
     function get_ens_file_strings(interval) {
 
-        const formatTime = d3.timeFormat("%Y%m%d_%H%M00")
-        date_range = d3.timeMinutes(new Date(2019, 4, 21, 0),  new Date(2019, 4, 21, 6, 5), interval)
+        const formatTime = d3.timeFormat("%H%M")
+        var datetime = document.getElementById("model_run").value
+        var year = datetime.substring(0, 4)
+        var month = parseInt(datetime.substring(4, 6)) - 1
+        var day = datetime.substring(6, 8)
+        var start_hour = datetime.substring(8, 10)
+        var end_hour = parseInt(start_hour) + 6
+        var date_range = d3.timeMinutes(new Date(year, month, day, start_hour, 0),
+            new Date(year, month, day, end_hour, 5), interval)
         let file_list = [];
-        date_range.forEach(function(x) {file_list.push("wofs_all_members_" +formatTime(x) + ".json")})
-
+        let init_time = document.getElementById("model_run").value.substring(0, 8)
+        date_range.forEach(function(x) {file_list.push("data_test2/" + init_time + start_hour + "00" +
+            "/wofs_sparse_prob_" +  init_time + formatTime(x) + ".json")});
         return file_list;
     }
 
-    function get_file_string() {
+    async function load_data() {
 
-        let run_date = document.getElementById("model_run").value;
-        let ens_member = document.getElementById("ens_mem").value;
-        let valid_time = document.getElementById("valid_time").value;
-        file_str = "data/" + run_date + "00/" + "ENS_MEM_" + ens_member + "/wofs_probs_sparse_" + run_date.slice(0, -2) +
-            "_" + run_date.slice(-2,) + valid_time + "00.json"
-        return file_str
-    }
-
-    function load_data() {
-
-        let j = d3.json(get_file_string());
-
-        return j
+        var file_list = get_ens_file_strings(5)
+        var data = {}
+        for (i=0; i<file_list.length; i++) {
+            var key = "fm_" + String(i*5)
+            var d = await d3.json(file_list[i])
+            data[key] = d
+        }
+        return data;
     }
 
     function build_data_object(data) {
 
-        let coord = proj4(orig_proj, wofs_proj, data['se_coords'])
+        let member = document.getElementById("ens_mem").value
+        let obj_dict = {}
+        let coord = transformer.inverse(data['fm_0']['se_coords'])
         let lon_array_m = create_coord_array(coord[0], wofs_x_length, resolution)
         let lat_array_m = create_coord_array(coord[1], wofs_y_length, resolution)
-        let plot_data = create_geom_object(data["rows"], data["columns"], lon_array_m, lat_array_m)
+        for (let minutes of d3.range(0, 365, 5)) {
+            let subset = data["fm_" + minutes]["MEM_" + member]
+            let plot_data = create_geom_object(subset["rows"], subset["columns"], lon_array_m, lat_array_m)
+            obj_dict[minutes + "_" + member] = plot_data
+        }
+        return obj_dict;
+    }
 
-        return plot_data
+    function update_mem() {
+        plot_d = build_data_object(json);
+        update();
+    }
+
+    async function update_init_time() {
+
+        json = await load_data();
+        plot_d = build_data_object(json);
+        update();
     }
 
     function create_coord_array(coord, len, resolution) {
-        var array = [];
-        array.length = len
-        for (i=0; i<len; i++) {
-            array[i] = coord + (resolution * i);
-        }
+
+        let array = new Array(len);
+        for (let i=0; i<len; i++) { array[i] = coord + (resolution * i); }
         return array
     }
 
-    function create_geom(i, j, lons, lats, resolution) {
+    function get_title_timestamp() {
 
-        radius = resolution / 2
-        south_lat_m = lats[i] - radius
-        north_lat_m = lats[i] + radius
-        west_lon_m = lons[j] - radius
-        east_lon_m = lons[j] + radius
+        var datetime = document.getElementById("model_run").value
+        var year = datetime.substring(0, 4)
+        var month = parseInt(datetime.substring(4, 6)) - 1
+        var day = datetime.substring(6, 8)
+        var hour = datetime.substring(8, 10)
+        var minutes = document.getElementById("forecast_minute").value
 
-        se = proj4(wofs_proj, orig_proj, [east_lon_m, south_lat_m])
-        ne = proj4(wofs_proj, orig_proj, [east_lon_m, north_lat_m])
-        sw = proj4(wofs_proj, orig_proj, [west_lon_m, south_lat_m])
-        nw = proj4(wofs_proj, orig_proj, [west_lon_m, north_lat_m])
+        var date_string = String(new Date(year, month - 1, day, hour, minutes))
+        return "Probabilitiy 0f Tornado: " + date_string
+    }
+
+    function create_geom(i, j, lons, lats) {
+
+        let south_lat_m = lats[i] - radius
+        let north_lat_m = lats[i] + radius
+        let west_lon_m = lons[j] - radius
+        let east_lon_m = lons[j] + radius
+
+        let se = transformer.forward([east_lon_m, south_lat_m])
+        let ne = transformer.forward([east_lon_m, north_lat_m])
+        let sw = transformer.forward([west_lon_m, south_lat_m])
+        let nw = transformer.forward([west_lon_m, north_lat_m])
 
         return [sw, nw, ne, se, sw]}
 
     function create_geom_object(i_indices, j_indices, lons, lats) {
 
-        let coords = []
-        let grid_obj = {type: "FeatureCollection", features: []}
-        for (index in d3.range(i_indices.length)) {
-            coords.push([i_indices[index], j_indices[index]])
-            let geom = create_geom(i_indices[index], j_indices[index], lons, lats, resolution)
+        let coords = new Array(i_indices.length)
+        let grid_obj = {type: "FeatureCollection", features: new Array(i_indices.length)}
+        for (index of d3.range(i_indices.length)) {
+            coords[index] = [i_indices[index], j_indices[index]]
+            let geom = create_geom(i_indices[index], j_indices[index], lons, lats)
             let grid_cell_obj = {type: "Feature",
                                  id: index,
                                  geometry: {type: "Polygon", coordinates: [geom]}}
-            grid_obj["features"].push(grid_cell_obj)
+            grid_obj["features"][index] = grid_cell_obj
         }
         return [grid_obj, coords]
     }
 
     function update_time(direction) {
 
-        let selectElement = document.querySelectorAll('[name=valid_time]');
+        let selectElement = document.querySelectorAll('[name=forecast_minute]');
         let valid_times = [...selectElement[0].options].map(o => o.value)
-        let current = document.getElementById("valid_time").value;
+        let current = document.getElementById("forecast_minute").value;
         let current_int = parseInt(current);
         if (direction == "forward") {
             new_time = String(current_int + 5).padStart(2, '0');
@@ -273,7 +319,7 @@
         if (direction == "backward") {
             new_time = String(current_int - 5).padStart(2, '0');
             if (!valid_times.includes(new_time)) {new_time = valid_times[valid_times.length - 1]}}
-        document.getElementById("valid_time").value = new_time;
+        document.getElementById("forecast_minute").value = new_time;
         update();
     }
 
@@ -281,13 +327,12 @@
 <body onload="init()">
 <div id="menubar">
     <label for="model_run">Model Run: </label>
-    <select id="model_run" name="model_run" onchange="update()">
+    <select id="model_run" name="model_run" onchange="update_init_time()">
         <option value="2019052100" selected>2019-05-21-0000</option>
         <option value="2019052101">2019-05-21-0100</option>
-        <option value="2019052102">2019-05-21-0200</option>
     </select>
     <label for="ens_mem">Ensemble Member: </label>
-    <select id="ens_mem" name="ens_mem" onchange="update()">
+    <select id="ens_mem" name="ens_mem" onchange="update_mem()">
         <option value="1" selected>Member 1</option>
         <option value="2">Member 2</option>
         <option value="3">Member 3</option>
@@ -306,9 +351,12 @@
         <option value="16">Member 16</option>
         <option value="17">Member 17</option>
         <option value="18">Member 18</option>
+        <option value="mean">Mean</option>
+        <option value="max">Max</option>
+        <option value="median">Median</option>
     </select>
-    <label for="valid_time">Valid Time: </label>
-    <select id="valid_time" name="valid_time" onchange="update()">
+    <label for="forecast_minute">Forecast Hour: </label>
+    <select id="forecast_minute" name="forecast_minute" onchange="update()">
         <option value="00" selected>00:00</option>
         <option value="05">00:05</option>
         <option value="10">00:10</option>
@@ -321,6 +369,67 @@
         <option value="45">00:45</option>
         <option value="50">00:50</option>
         <option value="55">00:55</option>
+        <option value="60">01:00</option>
+        <option value="65">01:05</option>
+        <option value="70">01:10</option>
+        <option value="75">01:15</option>
+        <option value="80">01:20</option>
+        <option value="85">01:25</option>
+        <option value="90">01:30</option>
+        <option value="95">01:35</option>
+        <option value="100">01:40</option>
+        <option value="105">01:45</option>
+        <option value="110">01:50</option>
+        <option value="115">01:55</option>
+        <option value="120">02:00</option>
+        <option value="125">02:05</option>
+        <option value="130">02:10</option>
+        <option value="135">02:15</option>
+        <option value="140">02:20</option>
+        <option value="145">02:25</option>
+        <option value="150">02:30</option>
+        <option value="155">02:35</option>
+        <option value="160">02:40</option>
+        <option value="165">02:45</option>
+        <option value="170">02:50</option>
+        <option value="175">02:55</option>
+        <option value="180">03:00</option>
+        <option value="185">03:05</option>
+        <option value="190">03:10</option>
+        <option value="195">03:15</option>
+        <option value="200">03:20</option>
+        <option value="205">03:25</option>
+        <option value="210">03:30</option>
+        <option value="215">03:35</option>
+        <option value="220">03:40</option>
+        <option value="225">03:45</option>
+        <option value="230">03:50</option>
+        <option value="235">03:55</option>
+        <option value="240">04:00</option>
+        <option value="245">04:05</option>
+        <option value="250">04:10</option>
+        <option value="255">04:15</option>
+        <option value="260">04:20</option>
+        <option value="265">04:25</option>
+        <option value="270">04:30</option>
+        <option value="275">04:35</option>
+        <option value="280">04:40</option>
+        <option value="285">04:45</option>
+        <option value="290">04:50</option>
+        <option value="295">04:55</option>
+        <option value="300">05:00</option>
+        <option value="305">05:05</option>
+        <option value="310">05:10</option>
+        <option value="315">05:15</option>
+        <option value="320">05:20</option>
+        <option value="325">05:25</option>
+        <option value="330">05:30</option>
+        <option value="335">05:35</option>
+        <option value="340">05:40</option>
+        <option value="345">05:45</option>
+        <option value="350">05:50</option>
+        <option value="355">05:55</option>
+        <option value="360">06:00</option>
     </select>
 </div>
 <div id="mapview">
