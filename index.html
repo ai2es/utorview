@@ -24,8 +24,8 @@
 
         json = await load_data();
         plot_d = build_data_object(json);
-        let total_grid_cells = json['fm_5']['MEM_1']['rows'].length;
-        let plot_data = plot_d['5_1']
+        let total_grid_cells = json['fm_0']['MEM_1']['rows'].length;
+        let plot_data = plot_d['0_1']
         let plot_geom = plot_data[0]
         let plot_coords = plot_data[1]
         let coord = transformer.inverse(json['fm_0']['se_coords'])
