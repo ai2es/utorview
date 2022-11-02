@@ -10,30 +10,29 @@
 <!--<script src="stormdata.js"></script>-->
 <script>
 
-    let wofs_x_length = 300;
-    let wofs_y_length = 300;
-    let resolution = 3000;
-    let radius = resolution / 2;
-    let orig_proj = "WGS84";
-    let wofs_proj = "+proj=lcc +lat_0=38.336433 +lon_0=-101 +lat_1=32 +lat_2=46 +a=6370000 +b=6370000 +ellps=WGS84";
-    let transformer = proj4(wofs_proj, orig_proj);
-    let spaghetti_traces = [];
-    let cell_domain = [];
-
     async function init() {
 
-        json = await load_data();
-        plot_d = build_data_object(json);
+        let wofs_x_length = 300;
+        let wofs_y_length = 300;
+        let resolution = 3000;
+        let radius = resolution / 2;
+        let orig_proj = "WGS84";
+        let wofs_proj = "+proj=lcc +lat_0=38.336433 +lon_0=-101 +lat_1=32 +lat_2=46 +a=6370000 +b=6370000 +ellps=WGS84";
+        let transformer = proj4(wofs_proj, orig_proj);
+        let spaghetti_traces = [];
+        let cell_i, cell_j;
+        let json = await load_data();
+        let plot_d = build_data_object(json);
         let total_grid_cells = json['fm_0']['MEM_1']['rows'].length;
-        let plot_data = plot_d['0_1']
-        let plot_geom = plot_data[0]
-        let plot_coords = plot_data[1]
-        let coord = transformer.inverse(json['fm_0']['se_coords'])
-        let lon_array_m = create_coord_array(coord[0], wofs_x_length, resolution)
-        let lat_array_m = create_coord_array(coord[1], wofs_y_length, resolution)
-        let domain = get_wofs_domain_geom(lon_array_m, lat_array_m)
+        let coord = transformer.inverse(json['fm_0']['se_coords']);
+        let lon_array_m = create_coord_array(coord[0], wofs_x_length, resolution);
+        let lat_array_m = create_coord_array(coord[1], wofs_y_length, resolution);
+        let domain = get_wofs_domain_geom(lon_array_m, lat_array_m);
+        let plot_data = plot_d['0_1'];
+        let plot_geom = plot_data[0];
+        let plot_coords = plot_data[1];
 
-        map_data = {type: "choroplethmapbox",
+        let map_data = {type: "choroplethmapbox",
                     locations: d3.range(total_grid_cells),
                     marker: {line: {width: 0},
                              opacity: 0.7},
@@ -44,15 +43,6 @@
                     customdata: plot_coords,
                     // hovertemplate: "%{customdata}",
                     geojson: plot_geom};
-
-        wofs_domain = {
-            type: "scattermapbox",
-            showlegend: false,
-            mode: 'lines',
-            line: {color: 'grey', width: 2},
-            lon: domain[0],
-            lat: domain[1],
-            };
 
         let init_trace = {
               x: [180],
@@ -66,7 +56,24 @@
               showlegend: false
             };
 
+        let wofs_domain = {
+            type: "scattermapbox",
+            showlegend: false,
+            mode: 'lines',
+            line: {color: 'grey', width: 2},
+            lon: domain[0],
+            lat: domain[1],
+            };
 
+        let cell_domain = {
+            type: "scattermapbox",
+            showlegend: false,
+            mode: 'lines',
+            line: {color: 'black', width: 2},
+            lon: null,
+            lat: null};
+
+        let all_traces = [map_data, init_trace, wofs_domain, cell_domain].flat();
 
         let layout = {
             title: {text: get_title_timestamp(), x: 0.05, font: {size: 22}},
@@ -96,34 +103,39 @@
                 font: {size: 18},
             }};
 
-        Plotly.newPlot(document.getElementById("mapview"), [map_data, wofs_domain, init_trace], layout);
 
+        Plotly.newPlot(document.getElementById("mapview"), all_traces, layout);
+
+        document.getElementById('mapview').on('plotly_click', get_spaghetti);
+        document.getElementById('ens_mem').addEventListener('change', update_mem);
+        document.getElementById('forecast_minute').addEventListener('change', update);
+        document.getElementById('model_run').addEventListener('change', update_init_time);
         document.addEventListener('keypress', function(event) {
             let code = event.code;
             if (code === "Period") {update_time("forward");}
             if (code === "Comma") {update_time("backward");}},
             false);
 
-        document.getElementById('mapview').on('plotly_click', async function(point_data) {
+    async function get_spaghetti(point_data) {
 
-            let pt = (point_data.points || [])[0]
-            let index = pt.customdata
-            spaghetti_data = await spaghetti(index[0], index[1])
-            spaghetti_traces = build_traces(spaghetti_data)
-            cell_domain = get_selected_cell_geom(index[0], index[1], lon_array_m, lat_array_m)
-
-            let all_traces = [cell_domain, map_data, wofs_domain, spaghetti_traces].flat()
-            await Plotly.react(document.getElementById("mapview"), all_traces, layout);
-            });
-    }
+        let pt = (point_data.points || [])[0]
+        let index = pt.customdata
+        cell_i = index[0]
+        cell_j = index[1]
+        let spaghetti_data = await spaghetti(cell_i, cell_j)
+        spaghetti_traces = build_traces(spaghetti_data)
+        cell_domain = get_selected_cell_geom(index[0], index[1], lon_array_m, lat_array_m)
+        all_traces = [map_data, spaghetti_traces, wofs_domain, cell_domain].flat()
+        Plotly.react(document.getElementById("mapview"), all_traces, layout);
+        }
 
     async function update() {
 
         let trace = select_trace()
-        let plot_geom = trace[1][0]
-        let plot_coords = trace[1][1]
+        plot_geom = trace[1][0]
+        plot_coords = trace[1][1]
         let trace_values = trace[0]
-        let total_grid_cells = trace_values['rows'].length
+        total_grid_cells = trace_values['rows'].length
         let minute = parseInt(document.getElementById("forecast_minute").value)
 
         map_data = {type: "choroplethmapbox",
@@ -136,15 +148,14 @@
             hoverinfo: "z",
             customdata: plot_coords,
             geojson: plot_geom};
-        let layout = document.getElementById("mapview").layout
+
         layout["title"]["text"] = get_title_timestamp()
         layout["shapes"][0]["x0"] = minute
         layout["shapes"][0]["x1"] = minute
-        let wd = document.getElementById("mapview").data[2]
-        let all_traces = [cell_domain, map_data, wofs_domain, spaghetti_traces].flat()
+
+        all_traces = [map_data, spaghetti_traces, wofs_domain, cell_domain].flat();
 
         Plotly.react(document.getElementById("mapview"), all_traces, layout);
-
     }
 
     function get_selected_cell_geom(i, j, lon_array_m, lat_array_m) {
@@ -153,7 +164,7 @@
         let lons = geom.map(item => item[0])
         let lats = geom.map(item => item[1])
 
-        let cell_domain = {
+        cell_domain = {
                 type: "scattermapbox",
                 showlegend: false,
                 mode: 'lines',
@@ -241,7 +252,7 @@
                     if (m===0) { d[mem] = [] }
                     var member = "MEM_" + String(mem)
                     var found = false
-                    let row_indices = f[member]['rows'].flatMap((xx, zqq) => xx === i ? zqq : [])
+                    let row_indices = f[member]['rows'].flatMap((x, z) => x === i ? z : [])
                     for (index=0; index<row_indices.length; index++) {
                         if (f[member]['columns'][row_indices[index]] === j) {
                             d[mem].push(f[member]['probabilities'][row_indices[index]])
@@ -313,6 +324,8 @@
 
         json = await load_data();
         plot_d = build_data_object(json);
+        let spaghetti_data = await spaghetti(cell_i, cell_j)
+        spaghetti_traces = build_traces(spaghetti_data)
         await update();
     }
 
@@ -381,18 +394,19 @@
             if (!valid_times.includes(new_time)) {new_time = valid_times[valid_times.length - 1]}}
         document.getElementById("forecast_minute").value = new_time;
         update();
-    }
+    }}
 
 </script>
 <body onload="init()">
 <div id="menubar">
     <label for="model_run">Model Run: </label>
-    <select id="model_run" name="model_run" onchange="update_init_time()">
+    <select id="model_run" name="model_run">
         <option value="2019052100" selected>2019-05-21-0000</option>
         <option value="2019052101">2019-05-21-0100</option>
     </select>
     <label for="ens_mem">Ensemble Member: </label>
-    <select id="ens_mem" name="ens_mem" onchange="update_mem()">
+        <select id="ens_mem" name="ens_mem">
+
         <option value="1" selected>Member 1</option>
         <option value="2">Member 2</option>
         <option value="3">Member 3</option>
@@ -416,7 +430,7 @@
         <option value="median">Median</option>
     </select>
     <label for="forecast_minute">Forecast Hour: </label>
-    <select id="forecast_minute" name="forecast_minute" onchange="update()">
+    <select id="forecast_minute" name="forecast_minute">
         <option value="00" selected>00:00</option>
         <option value="05">00:05</option>
         <option value="10">00:10</option>
