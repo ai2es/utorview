@@ -6,8 +6,8 @@
 <script src="https://d3js.org/d3.v7.min.js"></script>
 <script src="https://cdn.plot.ly/plotly-2.11.1.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.8.0/proj4.js"></script>
+<script src="https://unpkg.com/@msgpack/msgpack@2.8.0/dist.es5+umd/msgpack.min.js"></script>
 <!--<script src="https://cdn.jsdelivr.net/gh/nicolaspanel/numjs@0.15.1/dist/numjs.min.js"></script>-->
-<!--<script src="stormdata.js"></script>-->
 <script>
 
     async function init() {
@@ -116,6 +116,19 @@
             if (code === "Comma") {update_time("backward");}},
             false);
 
+    async function get_spaghetti(point_data) {
+
+        let pt = (point_data.points || [])[0]
+        let index = pt.customdata
+        cell_i = index[0]
+        cell_j = index[1]
+        let spaghetti_data = await spaghetti(cell_i, cell_j)
+        spaghetti_traces = build_traces(spaghetti_data)
+        cell_domain = get_selected_cell_geom(index[0], index[1], lon_array_m, lat_array_m)
+        all_traces = [map_data, spaghetti_traces, wofs_domain, cell_domain].flat()
+        Plotly.react(document.getElementById("mapview"), all_traces, layout);
+        }
+
     async function update() {
 
         let trace = select_trace()
@@ -145,6 +158,35 @@
         Plotly.react(document.getElementById("mapview"), all_traces, layout);
     }
 
+    function get_selected_cell_geom(i, j, lon_array_m, lat_array_m) {
+
+        let geom = create_geom(i, j, lon_array_m, lat_array_m)
+        let lons = geom.map(item => item[0])
+        let lats = geom.map(item => item[1])
+
+        cell_domain = {
+                type: "scattermapbox",
+                showlegend: false,
+                mode: 'lines',
+                line: {color: 'black', width: 2},
+                lon: lons,
+                lat: lats};
+
+        return cell_domain}
+
+    function get_wofs_domain_geom(lon_array_m, lat_array_m) {
+
+        let se = transformer.forward([lon_array_m[0], lat_array_m[0]]);
+        let sw = transformer.forward([lon_array_m[wofs_x_length - 1], lat_array_m[0]]);
+        let nw = transformer.forward([lon_array_m[wofs_x_length - 1], lat_array_m[wofs_y_length - 1]]);
+        let ne = transformer.forward([lon_array_m[0], lat_array_m[wofs_y_length - 1]]);
+
+        let lons = [se[0], sw[0], nw[0], ne[0], se[0]]
+        let lats = [se[1], sw[1], nw[1], ne[1], se[1]]
+
+        return [lons, lats]
+    }
+
     function select_trace() {
 
         let member = document.getElementById("ens_mem").value
@@ -153,51 +195,6 @@
         let geo = plot_d[String(parseInt(time)) + "_" + member]
         return [p, geo]
     }
-
-    async function get_spaghetti(point_data) {
-
-        let pt = (point_data.points || [])[0]
-        let index = pt.customdata
-        cell_i = index[0]
-        cell_j = index[1]
-        let spaghetti_data = await spaghetti(cell_i, cell_j)
-        spaghetti_traces = build_traces(spaghetti_data)
-        cell_domain = get_selected_cell_geom(index[0], index[1], lon_array_m, lat_array_m)
-        all_traces = [map_data, spaghetti_traces, wofs_domain, cell_domain].flat()
-        Plotly.react(document.getElementById("mapview"), all_traces, layout);
-        }
-
-    async function spaghetti(i, j) {
-
-        const calc_mean = array => array.reduce((a, b) => a + b) / array.length
-        const calc_median = (arr) => {return arr.slice().sort((a, b) => a - b)[Math.floor(arr.length / 2)]; };
-
-        let d = {'length': 18, 'ens_mean': [], 'ens_median': []}
-            for (let m of d3.range(0, 365, 5)) {
-                let fm = "fm_" + m
-                let f = json[fm]
-                let ens_all_ts = []
-                for (mem=1; mem<19; mem++) {
-                    if (m===0) { d[mem] = [] }
-                    var member = "MEM_" + String(mem)
-                    var found = false
-                    let row_indices = f[member]['rows'].flatMap((x, z) => x === i ? z : [])
-                    for (index=0; index<row_indices.length; index++) {
-                        if (f[member]['columns'][row_indices[index]] === j) {
-                            d[mem].push(f[member]['probabilities'][row_indices[index]])
-                            found = true
-                        }
-                    }
-                    if (found === false) { d[mem].push(0) }
-                    ens_all_ts.push(d[mem][m/5])
-                }
-            let mean_ens = calc_mean(ens_all_ts)
-            let median_ens = calc_median(ens_all_ts)
-            d['ens_mean'].push(mean_ens)
-            d['ens_median'].push(median_ens)
-        }
-        return d
-        }
 
     function build_traces(trace_data) {
 
@@ -241,56 +238,64 @@
         return all_traces
     }
 
-    function get_selected_cell_geom(i, j, lon_array_m, lat_array_m) {
+    async function spaghetti(i, j) {
 
-        let geom = create_geom(i, j, lon_array_m, lat_array_m)
-        let lons = geom.map(item => item[0])
-        let lats = geom.map(item => item[1])
+        const calc_mean = array => array.reduce((a, b) => a + b) / array.length
+        const calc_median = (arr) => {return arr.slice().sort((a, b) => a - b)[Math.floor(arr.length / 2)]; };
 
-        cell_domain = {
-                type: "scattermapbox",
-                showlegend: false,
-                mode: 'lines',
-                line: {color: 'black', width: 2},
-                lon: lons,
-                lat: lats};
+        let d = {'length': 18, 'ens_mean': [], 'ens_median': []}
+            for (let m of d3.range(0, 365, 5)) {
+                let fm = "fm_" + m
+                let f = json[fm]
+                let ens_all_ts = []
+                for (mem=1; mem<19; mem++) {
+                    if (m===0) { d[mem] = [] }
+                    var member = "MEM_" + String(mem)
+                    var found = false
+                    let row_indices = f[member]['rows'].flatMap((x, z) => x === i ? z : [])
+                    for (index=0; index<row_indices.length; index++) {
+                        if (f[member]['columns'][row_indices[index]] === j) {
+                            d[mem].push(f[member]['probabilities'][row_indices[index]])
+                            found = true
+                        }
+                    }
+                    if (found === false) { d[mem].push(0) }
+                    ens_all_ts.push(d[mem][m/5])
+                }
+            let mean_ens = calc_mean(ens_all_ts)
+            let median_ens = calc_median(ens_all_ts)
+            d['ens_mean'].push(mean_ens)
+            d['ens_median'].push(median_ens)
+        }
+        return d
+        }
 
-        return cell_domain}
+    function get_ens_file_strings(interval) {
 
-    function create_geom(i, j, lons, lats) {
-
-        let south_lat_m = lats[i] - radius
-        let north_lat_m = lats[i] + radius
-        let west_lon_m = lons[j] - radius
-        let east_lon_m = lons[j] + radius
-
-        let se = transformer.forward([east_lon_m, south_lat_m])
-        let ne = transformer.forward([east_lon_m, north_lat_m])
-        let sw = transformer.forward([west_lon_m, south_lat_m])
-        let nw = transformer.forward([west_lon_m, north_lat_m])
-
-        return [sw, nw, ne, se, sw]}
-
-    function get_wofs_domain_geom(lon_array_m, lat_array_m) {
-
-        let se = transformer.forward([lon_array_m[0], lat_array_m[0]]);
-        let sw = transformer.forward([lon_array_m[wofs_x_length - 1], lat_array_m[0]]);
-        let nw = transformer.forward([lon_array_m[wofs_x_length - 1], lat_array_m[wofs_y_length - 1]]);
-        let ne = transformer.forward([lon_array_m[0], lat_array_m[wofs_y_length - 1]]);
-
-        let lons = [se[0], sw[0], nw[0], ne[0], se[0]]
-        let lats = [se[1], sw[1], nw[1], ne[1], se[1]]
-
-        return [lons, lats]
+        const formatTime = d3.timeFormat("%H%M")
+        var datetime = document.getElementById("model_run").value
+        var year = datetime.substring(0, 4)
+        var month = parseInt(datetime.substring(4, 6)) - 1
+        var day = datetime.substring(6, 8)
+        var start_hour = datetime.substring(8, 10)
+        var end_hour = parseInt(start_hour) + 6
+        var date_range = d3.timeMinutes(new Date(year, month, day, start_hour, 0),
+            new Date(year, month, day, end_hour, 5), interval)
+        let file_list = [];
+        let init_time = document.getElementById("model_run").value.substring(0, 8)
+        date_range.forEach(function(x) {file_list.push("data_msgpack/" + init_time + start_hour + "00" +
+            "/wofs_sparse_prob_" +  init_time + formatTime(x) + ".msgpk")});
+        return file_list;
     }
 
     async function load_data() {
 
         var file_list = get_ens_file_strings(5)
         var data = {}
-        for (i=0; i<file_list.length; i++) {
-            var key = "fm_" + String(i*5)
-            var d = await d3.json(file_list[i])
+        for (let i=0; i<file_list.length; i++) {
+            let response = await fetch(file_list[i])
+            let d = await MessagePack.decodeAsync(response.body)
+            let key = "fm_" + String(i*5)
             data[key] = d
         }
         return data;
@@ -311,6 +316,54 @@
         return obj_dict;
     }
 
+    function update_mem() {
+        plot_d = build_data_object(json);
+        update();
+    }
+
+    async function update_init_time() {
+
+        json = await load_data();
+        plot_d = build_data_object(json);
+        let spaghetti_data = await spaghetti(cell_i, cell_j)
+        spaghetti_traces = build_traces(spaghetti_data)
+        await update();
+    }
+
+    function create_coord_array(coord, len, resolution) {
+
+        let array = new Array(len);
+        for (let i=0; i<len; i++) { array[i] = coord + (resolution * i); }
+        return array
+    }
+
+    function get_title_timestamp() {
+
+        var datetime = document.getElementById("model_run").value
+        var year = datetime.substring(0, 4)
+        var month = parseInt(datetime.substring(4, 6)) - 1
+        var day = datetime.substring(6, 8)
+        var hour = datetime.substring(8, 10)
+        var minutes = document.getElementById("forecast_minute").value
+
+        var date_string = String(new Date(year, month - 1, day, hour, minutes))
+        return "Probabilitiy of Tornado: " + date_string
+    }
+
+    function create_geom(i, j, lons, lats) {
+
+        let south_lat_m = lats[i] - radius
+        let north_lat_m = lats[i] + radius
+        let west_lon_m = lons[j] - radius
+        let east_lon_m = lons[j] + radius
+
+        let se = transformer.forward([east_lon_m, south_lat_m])
+        let ne = transformer.forward([east_lon_m, north_lat_m])
+        let sw = transformer.forward([west_lon_m, south_lat_m])
+        let nw = transformer.forward([west_lon_m, north_lat_m])
+
+        return [sw, nw, ne, se, sw]}
+
     function create_geom_object(i_indices, j_indices, lons, lats) {
 
         let coords = new Array(i_indices.length)
@@ -324,58 +377,6 @@
             grid_obj["features"][index] = grid_cell_obj
         }
         return [grid_obj, coords]
-    }
-
-    function create_coord_array(coord, len, resolution) {
-
-        let array = new Array(len);
-        for (let i=0; i<len; i++) { array[i] = coord + (resolution * i); }
-        return array
-    }
-
-    function get_ens_file_strings(interval) {
-
-        const formatTime = d3.timeFormat("%H%M")
-        var datetime = document.getElementById("model_run").value
-        var year = datetime.substring(0, 4)
-        var month = parseInt(datetime.substring(4, 6)) - 1
-        var day = datetime.substring(6, 8)
-        var start_hour = datetime.substring(8, 10)
-        var end_hour = parseInt(start_hour) + 6
-        var date_range = d3.timeMinutes(new Date(year, month, day, start_hour, 0),
-            new Date(year, month, day, end_hour, 5), interval)
-        let file_list = [];
-        let init_time = document.getElementById("model_run").value.substring(0, 8)
-        date_range.forEach(function(x) {file_list.push("data/" + init_time + start_hour + "00" +
-            "/wofs_sparse_prob_" +  init_time + formatTime(x) + ".json")});
-        return file_list;
-    }
-
-    function get_title_timestamp() {
-
-        let datetime = document.getElementById("model_run").value
-        let year = datetime.substring(0, 4)
-        let month = parseInt(datetime.substring(4, 6)) - 1
-        let day = datetime.substring(6, 8)
-        let hour = datetime.substring(8, 10)
-        let minutes = document.getElementById("forecast_minute").value
-        let date_string = String(new Date(year, month - 1, day, hour, minutes))
-
-        return "Probabilitiy of Tornado: " + date_string
-    }
-
-    function update_mem() {
-        plot_d = build_data_object(json);
-        update();
-    }
-
-    async function update_init_time() {
-
-        json = await load_data();
-        plot_d = build_data_object(json);
-        let spaghetti_data = await spaghetti(cell_i, cell_j)
-        spaghetti_traces = build_traces(spaghetti_data)
-        await update();
     }
 
     function update_time(direction) {
