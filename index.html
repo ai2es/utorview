@@ -23,29 +23,30 @@
         let cell_i, cell_j;
         let json = await load_data("wofs_sparse_prob_");
         let plot_d = build_data_object(json);
-        let total_grid_cells = json['fm_0']['MEM_1']['rows'].length;
+        let total_grid_cells = json['fm_0']['MEM_median']['rows'].length;
+
         let coord = transformer.inverse(json['fm_0']['se_coords']);
         let lon_array_m = create_coord_array(coord[0], wofs_x_length, resolution);
         let lat_array_m = create_coord_array(coord[1], wofs_y_length, resolution);
         let domain = get_wofs_domain_geom(lon_array_m, lat_array_m);
-        let plot_data = plot_d['0_1'];
+        let plot_data = plot_d['0_median'];
         let plot_geom = plot_data[0];
         let plot_coords = plot_data[1];
         let reflectivity, refl_data, plot_r, plot_refl, total_grid_cells_r, plot_geom_r, plot_coords_r;
         let load_refl = true
 
-            let map_data = {type: "choroplethmapbox",
-                    locations: d3.range(total_grid_cells),
-                    marker: {line: {width: 0},
-                             opacity: 0.7},
-                    z: json['fm_0']['MEM_1']['probabilities'],
-                    zmin: 0, zmax: 1,
-                    colorbar: {x: -0.05, thickness: 20},
-                    hoverinfo: "z",
-                    customdata: plot_coords,
-                    colorscale: 'YlGnBu',
-                    // hovertemplate: "%{customdata}",
-                    geojson: plot_geom};
+        let map_data = {type: "choroplethmapbox",
+                locations: d3.range(total_grid_cells),
+                marker: {line: {width: 0},
+                         opacity: 0.7},
+                z: json['fm_0']['MEM_1']['probabilities'],
+                zmin: 0, zmax: 1,
+                colorbar: {x: -0.05, thickness: 20},
+                hoverinfo: "z",
+                customdata: plot_coords,
+                colorscale: 'YlGnBu',
+                // hovertemplate: "%{customdata}",
+                geojson: plot_geom};
 
         let init_trace = {
               x: [180],
@@ -88,8 +89,9 @@
             grid: {rows: 1, columns: 2, pattern: 'independent'},
             height: 800,
             yaxis2: {range: [0, 0.5], title: {text:'Probability of Tornado', font: {size: 20}}},
-            // xaxis2: {range: [0, 360], title: {text:'Forecast Minute', font: {size: 20}}},
             xaxis2: {range: [0, 180], title: {text:'Forecast Minute', font: {size: 20}}},
+
+            // xaxis2: {range: get_timestamp(5), title: {text:'Forecast Minute', font: {size: 20}}, tickformat: '%H:%M:%S'},
             shapes: [{type: 'line',
                       x0: 0,
                       y0: 0,
@@ -226,6 +228,9 @@
         let all_traces = []
         // let forecast_minutes = d3.range(0, 365, 5)
         let forecast_minutes = d3.range(0, 185, 5)
+        // let forecast_minutes = get_timestamp(5);
+        console.log(forecast_minutes)
+        // let valid_time =
         for (let i=1; i<=trace_data.length; i++) {
             var trace = {
               x: forecast_minutes,
@@ -326,10 +331,26 @@
             new Date(year, month, day, end_hour, 5), interval)
         let file_list = [];
         let init_time = document.getElementById("model_run").value.substring(0, 8)
-        date_range.forEach(function(x) {file_list.push("data_msgpack/" + init_time + start_hour + "00/" +
-            file_prefix +  init_time + formatTime(x) + ".msgpk")});
+        date_range.forEach(function(x) {file_list.push("https://wofsdltornado.blob.core.windows.net/wofs-dl-preds/"
+            + init_time + start_hour + "00/" + file_prefix +  init_time + formatTime(x) + ".msgpk")});
         return file_list;
     }
+
+
+    function get_timestamp(interval) {
+
+        const formatTime = d3.timeFormat("%H%M")
+        var datetime = document.getElementById("model_run").value
+        var year = datetime.substring(0, 4)
+        var month = parseInt(datetime.substring(4, 6)) - 1
+        var day = datetime.substring(6, 8)
+        var start_hour = datetime.substring(8, 10)
+        var end_hour = parseInt(start_hour) + 3
+        var date_range = d3.timeMinutes(new Date(year, month, day, start_hour, 0),
+            new Date(year, month, day, end_hour, 5), interval)
+        return date_range;
+    }
+
 
     async function load_data(file_prefix) {
 
@@ -443,7 +464,6 @@
         document.getElementById("forecast_minute").value = new_time;
         update();
     }}
-
 </script>
 <body onload="init()">
 <div id="menubar">
@@ -454,9 +474,11 @@
     </select>
     <label for="ens_mem">Ensemble Member: </label>
         <select id="ens_mem" name="ens_mem">
-
-        <option value="1" selected>Member 1</option>
-        <option value="2">Member 2</option>
+        <option value="median" selected>Median</option>
+        <option value="mean">Mean</option>
+        <option value="max">Max</option>
+        <option value="1">Member 1</option>
+        <option value="2" >Member 2</option>
         <option value="3">Member 3</option>
         <option value="4">Member 4</option>
         <option value="5">Member 5</option>
@@ -473,9 +495,6 @@
         <option value="16">Member 16</option>
         <option value="17">Member 17</option>
         <option value="18">Member 18</option>
-        <option value="mean">Mean</option>
-        <option value="max">Max</option>
-        <option value="median">Median</option>
     </select>
     <label for="forecast_minute">Forecast Hour: </label>
     <select id="forecast_minute" name="forecast_minute">
@@ -516,42 +535,7 @@
         <option value="170">02:50</option>
         <option value="175">02:55</option>
         <option value="180">03:00</option>
-<!--        <option value="185">03:05</option>-->
-<!--        <option value="190">03:10</option>-->
-<!--        <option value="195">03:15</option>-->
-<!--        <option value="200">03:20</option>-->
-<!--        <option value="205">03:25</option>-->
-<!--        <option value="210">03:30</option>-->
-<!--        <option value="215">03:35</option>-->
-<!--        <option value="220">03:40</option>-->
-<!--        <option value="225">03:45</option>-->
-<!--        <option value="230">03:50</option>-->
-<!--        <option value="235">03:55</option>-->
-<!--        <option value="240">04:00</option>-->
-<!--        <option value="245">04:05</option>-->
-<!--        <option value="250">04:10</option>-->
-<!--        <option value="255">04:15</option>-->
-<!--        <option value="260">04:20</option>-->
-<!--        <option value="265">04:25</option>-->
-<!--        <option value="270">04:30</option>-->
-<!--        <option value="275">04:35</option>-->
-<!--        <option value="280">04:40</option>-->
-<!--        <option value="285">04:45</option>-->
-<!--        <option value="290">04:50</option>-->
-<!--        <option value="295">04:55</option>-->
-<!--        <option value="300">05:00</option>-->
-<!--        <option value="305">05:05</option>-->
-<!--        <option value="310">05:10</option>-->
-<!--        <option value="315">05:15</option>-->
-<!--        <option value="320">05:20</option>-->
-<!--        <option value="325">05:25</option>-->
-<!--        <option value="330">05:30</option>-->
-<!--        <option value="335">05:35</option>-->
-<!--        <option value="340">05:40</option>-->
-<!--        <option value="345">05:45</option>-->
-<!--        <option value="350">05:50</option>-->
-<!--        <option value="355">05:55</option>-->
-<!--        <option value="360">06:00</option>-->
+
     </select>
 
   <input type="checkbox", id="refl">
