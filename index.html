@@ -329,12 +329,13 @@
 
     function get_ens_file_strings(file_prefix, interval, variable) {
 
-        const formatTime = d3.timeFormat("%H%M")
+        const formatTime = d3.timeFormat("%Y%m%d%H%M")
         var datetime = document.getElementById("model_run").value
         var year = datetime.substring(0, 4)
         var month = parseInt(datetime.substring(4, 6)) - 1
         var day = datetime.substring(6, 8)
         var start_hour = datetime.substring(8, 10)
+        var start_min = datetime.substring(10, 12)
         var end_hour = parseInt(start_hour) + 3
         // var end_hour = parseInt(start_hour) + 6
         var date_range = d3.timeMinutes(new Date(year, month, day, start_hour, 0),
@@ -342,7 +343,7 @@
         let file_list = [];
         let init_time = document.getElementById("model_run").value.substring(0, 8)
         date_range.forEach(function(x) {file_list.push("https://wofsdltornado.blob.core.windows.net/wofs-dl-preds/"
-            + init_time + start_hour + "00/" + file_prefix +  formatTime(x) + "_" + variable + ".msgpk")});
+            + init_time + start_hour + start_min + "/" + file_prefix +  formatTime(x) + "_" + variable + ".msgpk")});
         return file_list;
     }
 
