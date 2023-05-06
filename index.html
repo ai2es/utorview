@@ -13,9 +13,10 @@
     async function init() {
 
         let run_dates = await read_valid_dates()
+        console.log(run_dates);
         let date_sel = document.getElementById("model_run");
-        const formatTimeValue = d3.utcFormat("%Y%m%d%H%M")
-        const formatTimeLabel = d3.utcFormat("%Y %b %d %H%M UTC")
+        const formatTimeValue = d3.utcFormat("%Y%m%d%H%M");
+        const formatTimeLabel = d3.utcFormat("%Y %b %d %H%M UTC");
         run_dates.forEach(function(rd) {
             let default_selected = false;
             let opt = new Option(formatTimeLabel(rd), formatTimeValue(rd), default_selected, default_selected);
@@ -32,6 +33,9 @@
         let spaghetti_traces = [];
         let cell_i, cell_j;
         let json = await load_data("wofs_sparse_prob_", "ML_PREDICTED_TOR");
+        let fms =  Object.keys(json);
+        let max_fm_str = fms[fms.length - 1];
+        let max_minutes = parseInt(max_fm_str.substring(3, max_fm_str.length));
         let plot_d = build_data_object(json);
         let total_grid_cells = json['fm_0']['MEM_median']['rows'].length;
 
@@ -40,6 +44,7 @@
         let lat_array_m = create_coord_array(coord[1], wofs_y_length, resolution);
         let domain = get_wofs_domain_geom(lon_array_m, lat_array_m);
         let plot_data = plot_d['0_median'];
+        console.log(json)
         let plot_geom = plot_data[0];
         let plot_coords = plot_data[1];
         let reflectivity, refl_data, plot_r, plot_refl, total_grid_cells_r, plot_geom_r, plot_coords_r;
@@ -49,7 +54,7 @@
                 locations: d3.range(total_grid_cells),
                 marker: {line: {width: 0},
                          opacity: 0.7},
-                z: json['fm_0']['MEM_1']['probabilities'],
+                z: json['fm_0']['MEM_median']['values'],
                 zmin: 0, zmax: 1,
                 colorbar: {x: -0.05, thickness: 20},
                 hoverinfo: "z",
@@ -159,7 +164,7 @@
             locations: d3.range(total_grid_cells),
             marker: {line: {width: 0},
                      opacity: 0.7},
-            z: trace_values['probabilities'],
+            z: trace_values['values'],
             zmin: 0, zmax: 1,
             colorbar: {x: -0.05, thickness: 20},
             hoverinfo: "z",
@@ -237,7 +242,7 @@
 
         let all_traces = []
         // let forecast_minutes = d3.range(0, 365, 5)
-        let forecast_minutes = d3.range(0, 185, 5)
+        let forecast_minutes = d3.range(0, max_minutes, 5)
         // let forecast_minutes = get_timestamp(5);
         console.log(forecast_minutes)
         // let valid_time =
@@ -301,7 +306,7 @@
 
         let d = {'length': 18, 'ens_mean': [], 'ens_median': []}
             // for (let m of d3.range(0, 365, 5)) {
-            for (let m of d3.range(0, 185, 5)) {
+            for (let m of d3.range(0, max_minutes, 5)) {
                 let fm = "fm_" + m
                 let f = json[fm]
                 let ens_all_ts = []
@@ -312,7 +317,7 @@
                     let row_indices = f[member]['rows'].flatMap((x, z) => x === i ? z : [])
                     for (index=0; index<row_indices.length; index++) {
                         if (f[member]['columns'][row_indices[index]] === j) {
-                            d[mem].push(f[member]['probabilities'][row_indices[index]])
+                            d[mem].push(f[member]['values'][row_indices[index]])
                             found = true
                         }
                     }
@@ -338,13 +343,12 @@
         var start_min = datetime.substring(10, 12)
         var end_hour = parseInt(start_hour) + 3
         // var end_hour = parseInt(start_hour) + 6
-        var date_range = d3.timeMinutes(new Date(year, month, day, start_hour, 0),
+        var date_range = d3.timeMinutes(new Date(year, month, day, start_hour, start_min),
             new Date(year, month, day, end_hour, 5), interval)
         let file_list = [];
         let init_time = document.getElementById("model_run").value.substring(0, 8)
         date_range.forEach(function(x) {file_list.push("https://wofsdltornado.blob.core.windows.net/wofs-dl-preds/"
             + init_time + start_hour + start_min + "/" + file_prefix +  formatTime(x) + "_" + variable + ".msgpk")});
-        console.log(file_list);
         return file_list;
     }
 
@@ -395,6 +399,8 @@
             let key = "fm_" + String(i*5)
             data[key] = d
         }
+        console.log(variable);
+        console.log(data);
         return data;
     }
 
@@ -402,12 +408,12 @@
 
         let member = document.getElementById("ens_mem").value
         let obj_dict = {}
-        let coord = transformer.inverse(data['fm_0']['se_coords'])
-        let lon_array_m = create_coord_array(coord[0], wofs_x_length, resolution)
-        let lat_array_m = create_coord_array(coord[1], wofs_y_length, resolution)
+        let coord = transformer.inverse(data['fm_0']['se_coords']);
+        let lon_array_m = create_coord_array(coord[0], wofs_x_length, resolution);
+        let lat_array_m = create_coord_array(coord[1], wofs_y_length, resolution);
         // for (let minutes of d3.range(0, 365, 5)) {
-        for (let minutes of d3.range(0, 185, 5)) {
-            let subset = data["fm_" + minutes]["MEM_" + member]
+        for (let minutes of d3.range(0, max_minutes, 5)) {
+            let subset = data["fm_" + minutes]["MEM_" + member];
             let plot_data = create_geom_object(subset["rows"], subset["columns"], lon_array_m, lat_array_m)
             obj_dict[minutes + "_" + member] = plot_data
         }
@@ -425,6 +431,9 @@
     async function update_init_time() {
 
         json = await load_data("wofs_sparse_prob_", "ML_PREDICTED_TOR");
+        fms =  Object.keys(json);
+        max_fm_str = fms[fms.length - 1];
+        max_minutes = parseInt(max_fm_str.substring(3, max_fm_str.length));
         plot_d = build_data_object(json);
         let spaghetti_data = await spaghetti(cell_i, cell_j)
         spaghetti_traces = build_traces(spaghetti_data)
