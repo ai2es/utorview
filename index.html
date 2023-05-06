@@ -31,7 +31,7 @@
         let transformer = proj4(wofs_proj, orig_proj);
         let spaghetti_traces = [];
         let cell_i, cell_j;
-        let json = await load_data("wofs_sparse_prob_");
+        let json = await load_data("wofs_sparse_prob_", "ML_PREDICTED_TOR");
         let plot_d = build_data_object(json);
         let total_grid_cells = json['fm_0']['MEM_median']['rows'].length;
 
@@ -125,7 +125,7 @@
         document.getElementById('refl').addEventListener('change', async function() {
             if (this.checked && load_refl == true) {
 
-                reflectivity = await load_data("wofs_sparse_refl_");
+                reflectivity = await load_data("wofs_sparse_prob_", "COMPOSITE_REFL_10CM");
                 plot_r = build_data_object(reflectivity);
                 load_refl = false
                 console.log('finished reflectivity loading.')
@@ -327,7 +327,7 @@
         return d
         }
 
-    function get_ens_file_strings(file_prefix, interval) {
+    function get_ens_file_strings(file_prefix, interval, variable) {
 
         const formatTime = d3.timeFormat("%H%M")
         var datetime = document.getElementById("model_run").value
@@ -342,7 +342,7 @@
         let file_list = [];
         let init_time = document.getElementById("model_run").value.substring(0, 8)
         date_range.forEach(function(x) {file_list.push("https://wofsdltornado.blob.core.windows.net/wofs-dl-preds/"
-            + init_time + start_hour + "00/" + file_prefix +  init_time + formatTime(x) + ".msgpk")});
+            + init_time + start_hour + "00/" + file_prefix +  formatTime(x) + "_" + variable + ".msgpk")});
         return file_list;
     }
 
@@ -383,9 +383,9 @@
 
 
 
-    async function load_data(file_prefix) {
+    async function load_data(file_prefix, variable) {
 
-        var file_list = get_ens_file_strings(file_prefix, 5)
+        var file_list = get_ens_file_strings(file_prefix, 5, variable)
         var data = {}
         for (let i=0; i<file_list.length; i++) {
             let response = await fetch(file_list[i])
