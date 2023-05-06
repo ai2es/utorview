@@ -329,7 +329,7 @@
 
     function get_ens_file_strings(file_prefix, interval, variable) {
 
-        const formatTime = d3.timeFormat("%Y%m%d%H%M")
+        const formatTime = d3.timeFormat("%Y%m%d%H%M00")
         var datetime = document.getElementById("model_run").value
         var year = datetime.substring(0, 4)
         var month = parseInt(datetime.substring(4, 6)) - 1
@@ -344,6 +344,7 @@
         let init_time = document.getElementById("model_run").value.substring(0, 8)
         date_range.forEach(function(x) {file_list.push("https://wofsdltornado.blob.core.windows.net/wofs-dl-preds/"
             + init_time + start_hour + start_min + "/" + file_prefix +  formatTime(x) + "_" + variable + ".msgpk")});
+        console.log(file_list);
         return file_list;
     }
 
@@ -423,7 +424,7 @@
 
     async function update_init_time() {
 
-        json = await load_data("wofs_sparse_prob_");
+        json = await load_data("wofs_sparse_prob_", "ML_PREDICTED_TOR");
         plot_d = build_data_object(json);
         let spaghetti_data = await spaghetti(cell_i, cell_j)
         spaghetti_traces = build_traces(spaghetti_data)
