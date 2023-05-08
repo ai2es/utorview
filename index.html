@@ -333,22 +333,36 @@
         }
 
     function get_ens_file_strings(file_prefix, interval, variable) {
-
-        const formatTime = d3.timeFormat("%Y%m%d%H%M00")
-        var datetime = document.getElementById("model_run").value
-        var year = datetime.substring(0, 4)
+        const formatTime = d3.timeFormat("%Y%m%d%H%M00");
+        var datetime = document.getElementById("model_run").value;
+        var year = datetime.substring(0, 4);
         var month = parseInt(datetime.substring(4, 6)) - 1
         var day = datetime.substring(6, 8)
         var start_hour = datetime.substring(8, 10)
         var start_min = datetime.substring(10, 12)
-        var end_hour = parseInt(start_hour) + 3
+        var start_hour_int = parseInt(start_hour)
+        if (start_hour_int <=4)
+        {
+            var start_date = new Date(year, month, day, start_hour, start_min);
+            start_date = new Date(start_date.getTime() + 86400000);
+        }
+        else
+        {
+            start_date = new Date(year, month, day, start_hour, start_min);
+        }
+        end_date = new Date(start_date.getTime() + 3 * 3600000)
+        console.log("Start and End dates");
+        console.log(start_date);
+        console.log(end_date)
+        var end_hour =  end_date.getHours()
         // var end_hour = parseInt(start_hour) + 6
-        var date_range = d3.timeMinutes(new Date(year, month, day, start_hour, start_min),
-            new Date(year, month, day, end_hour, 5), interval)
+        var date_range = d3.timeMinutes(start_date,
+            end_date, interval)
         let file_list = [];
         let init_time = document.getElementById("model_run").value.substring(0, 8)
         date_range.forEach(function(x) {file_list.push("https://wofsdltornado.blob.core.windows.net/wofs-dl-preds/"
             + init_time + start_hour + start_min + "/" + file_prefix +  formatTime(x) + "_" + variable + ".msgpk")});
+        console.log(file_list);
         return file_list;
     }
 
@@ -369,7 +383,8 @@
 
     async function read_valid_dates(valid_init_hours=[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23])
     {
-        let date_filename = "data_msgpack/available_dates.csv";
+        let date_filename = "https://wofsdltornado.blob.core.windows.net/wofs-dl-preds/available_dates.csv";
+        console.log(date_filename)
         let date_resp = await fetch(date_filename);
         let date_str = await date_resp.text();
         let run_date_strs = date_str.split("\n");
@@ -382,6 +397,7 @@
                                 parseInt(run_date_strs[i].substring(10, 12)))
             ));
         }
+        console.log(dates);
         dates = dates.filter(function(d) {return valid_init_hours.includes(d.getUTCHours());});
         dates = dates.reverse();
         return dates;
