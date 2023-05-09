@@ -152,6 +152,7 @@
     async function update() {
 
         let trace = select_trace(json, plot_d)
+        console.log(trace)
         plot_geom = trace[1][0]
         plot_coords = trace[1][1]
         let trace_values = trace[0]
@@ -350,7 +351,7 @@
         {
             start_date = new Date(year, month, day, start_hour, start_min);
         }
-        end_date = new Date(start_date.getTime() + 3 * 3600000)
+        end_date = new Date(start_date.getTime() + 3 * 3600000 + 5 * 60000)
         console.log("Start and End dates");
         console.log(start_date);
         console.log(end_date)
@@ -358,6 +359,8 @@
         // var end_hour = parseInt(start_hour) + 6
         var date_range = d3.timeMinutes(start_date,
             end_date, interval)
+        console.log("Date Range")
+        console.log(date_range)
         let file_list = [];
         let init_time = document.getElementById("model_run").value.substring(0, 8)
         date_range.forEach(function(x) {file_list.push("https://wofsdltornado.blob.core.windows.net/wofs-dl-preds/"
@@ -428,7 +431,7 @@
         let lon_array_m = create_coord_array(coord[0], wofs_x_length, resolution);
         let lat_array_m = create_coord_array(coord[1], wofs_y_length, resolution);
         // for (let minutes of d3.range(0, 365, 5)) {
-        for (let minutes of d3.range(0, max_minutes, 5)) {
+        for (let minutes of d3.range(0, max_minutes+5, 5)) {
             let subset = data["fm_" + minutes]["MEM_" + member];
             let plot_data = create_geom_object(subset["rows"], subset["columns"], lon_array_m, lat_array_m)
             obj_dict[minutes + "_" + member] = plot_data
