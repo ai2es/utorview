@@ -13,7 +13,6 @@
     async function init() {
 
         let run_dates = await read_valid_dates()
-        console.log(run_dates);
         let date_sel = document.getElementById("model_run");
         const formatTimeValue = d3.utcFormat("%Y%m%d%H%M");
         const formatTimeLabel = d3.utcFormat("%Y %b %d %H%M UTC");
@@ -43,8 +42,8 @@
         let lon_array_m = create_coord_array(coord[0], wofs_x_length, resolution);
         let lat_array_m = create_coord_array(coord[1], wofs_y_length, resolution);
         let domain = get_wofs_domain_geom(lon_array_m, lat_array_m);
+        console.log(lon_array_m)
         let plot_data = plot_d['0_median'];
-        console.log(json)
         let plot_geom = plot_data[0];
         let plot_coords = plot_data[1];
         let reflectivity, refl_data, plot_r, plot_refl, total_grid_cells_r, plot_geom_r, plot_coords_r;
@@ -98,13 +97,13 @@
             title: {text: get_title_timestamp(), x: 0.05, font: {size: 22}},
             mapbox: {
                 style: "open-street-map",
-                center: {lon: -96, lat: 35},
+                center: {lon: domain[2][0], lat: domain[2][1]},
                 zoom: 5},
             showlegend: true,
             grid: {rows: 1, columns: 2, pattern: 'independent'},
             height: 800,
             yaxis2: {range: [0, 0.5], title: {text:'Probability of Tornado', font: {size: 20}}},
-            xaxis2: {range: [0, 180], title: {text:'Forecast Minute', font: {size: 20}}},
+            xaxis2: {tickmode:"linear", tick0: 0, dtick:15, title: {text:'Forecast Minute', font: {size: 20}}},
 
             // xaxis2: {range: get_timestamp(5), title: {text:'Forecast Minute', font: {size: 20}}, tickformat: '%H:%M:%S'},
             shapes: [{type: 'line',
@@ -173,9 +172,23 @@
             customdata: plot_coords,
             geojson: plot_geom};
 
+
+
+        wofs_domain = {
+            type: "scattermapbox",
+            showlegend: false,
+            mode: 'lines',
+            line: {color: 'grey', width: 2},
+            lon: domain[0],
+            lat: domain[1],
+            };
+
         layout["title"]["text"] = get_title_timestamp()
         layout["shapes"][0]["x0"] = minute
         layout["shapes"][0]["x1"] = minute
+        layout["mapbox"]["center"] = {lon: domain[2][0], lat: domain[2][1]}
+
+
         if (document.getElementById("refl").checked) {
 
             let trace_r = select_trace(reflectivity, plot_r)
@@ -224,11 +237,11 @@
         let sw = transformer.forward([lon_array_m[wofs_x_length - 1], lat_array_m[0]]);
         let nw = transformer.forward([lon_array_m[wofs_x_length - 1], lat_array_m[wofs_y_length - 1]]);
         let ne = transformer.forward([lon_array_m[0], lat_array_m[wofs_y_length - 1]]);
-
+        let center = transformer.forward([lon_array_m[Math.floor(wofs_x_length / 2)], lat_array_m[Math.floor(wofs_y_length / 2)]])
         let lons = [se[0], sw[0], nw[0], ne[0], se[0]]
         let lats = [se[1], sw[1], nw[1], ne[1], se[1]]
 
-        return [lons, lats]
+        return [lons, lats, center]
     }
 
     function select_trace(data, geom) {
@@ -453,6 +466,10 @@
         fms =  Object.keys(json);
         max_fm_str = fms[fms.length - 1];
         max_minutes = parseInt(max_fm_str.substring(3, max_fm_str.length));
+        coord = transformer.inverse(json['fm_0']['se_coords']);
+        lon_array_m = create_coord_array(coord[0], wofs_x_length, resolution);
+        lat_array_m = create_coord_array(coord[1], wofs_y_length, resolution);
+        domain = get_wofs_domain_geom(lon_array_m, lat_array_m);
         plot_d = build_data_object(json);
         let spaghetti_data = await spaghetti(cell_i, cell_j)
         spaghetti_traces = build_traces(spaghetti_data)
