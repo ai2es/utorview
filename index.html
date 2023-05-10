@@ -32,6 +32,7 @@
         let spaghetti_traces = [];
         let cell_i, cell_j;
         let json = await load_data("wofs_sparse_prob_", "ML_PREDICTED_TOR");
+        let reflectivity = await load_data("wofs_sparse_prob_", "COMPOSITE_REFL_10CM");
         let fms =  Object.keys(json);
         let max_fm_str = fms[fms.length - 1];
         let max_minutes = parseInt(max_fm_str.substring(3, max_fm_str.length));
@@ -46,8 +47,7 @@
         let plot_data = plot_d['0_median'];
         let plot_geom = plot_data[0];
         let plot_coords = plot_data[1];
-        let reflectivity, refl_data, plot_r, plot_refl, total_grid_cells_r, plot_geom_r, plot_coords_r;
-        let load_refl = true
+        let refl_data, plot_r, total_grid_cells_r, plot_geom_r, plot_coords_r;
 
         let map_data = {type: "choroplethmapbox",
                 locations: d3.range(total_grid_cells),
@@ -127,14 +127,8 @@
         Plotly.newPlot(document.getElementById("mapview"), all_traces, layout);
 
         document.getElementById('refl').addEventListener('change', async function() {
-            if (this.checked && load_refl == true) {
-
-                reflectivity = await load_data("wofs_sparse_prob_", "COMPOSITE_REFL_10CM");
                 plot_r = build_data_object(reflectivity);
-                load_refl = false
-                console.log('finished reflectivity loading.')
                 update();
-            } else { update(); }
         });
 
         document.getElementById('refl_alpha').addEventListener('change', update);
@@ -444,7 +438,7 @@
         let lon_array_m = create_coord_array(coord[0], wofs_x_length, resolution);
         let lat_array_m = create_coord_array(coord[1], wofs_y_length, resolution);
         // for (let minutes of d3.range(0, 365, 5)) {
-        for (let minutes of d3.range(0, max_minutes+5, 5)) {
+        for (let minutes of d3.range(0, max_minutes + 5, 5)) {
             let subset = data["fm_" + minutes]["MEM_" + member];
             let plot_data = create_geom_object(subset["rows"], subset["columns"], lon_array_m, lat_array_m)
             obj_dict[minutes + "_" + member] = plot_data
@@ -460,21 +454,21 @@
         update();
     }
 
-    async function update_init_time() {
+async function update_init_time() {
 
-        json = await load_data("wofs_sparse_prob_", "ML_PREDICTED_TOR");
-        fms =  Object.keys(json);
-        max_fm_str = fms[fms.length - 1];
-        max_minutes = parseInt(max_fm_str.substring(3, max_fm_str.length));
-        coord = transformer.inverse(json['fm_0']['se_coords']);
-        lon_array_m = create_coord_array(coord[0], wofs_x_length, resolution);
-        lat_array_m = create_coord_array(coord[1], wofs_y_length, resolution);
-        domain = get_wofs_domain_geom(lon_array_m, lat_array_m);
-        plot_d = build_data_object(json);
-        let spaghetti_data = await spaghetti(cell_i, cell_j)
-        spaghetti_traces = build_traces(spaghetti_data)
-        await update();
-    }
+
+   document.getElementById("refl").checked = false;
+   json = await load_data("wofs_sparse_prob_", "ML_PREDICTED_TOR");
+   reflectivity = await load_data("wofs_sparse_prob_", "COMPOSITE_REFL_10CM");
+   fms =  Object.keys(json);
+   max_fm_str = fms[fms.length - 1];
+   max_minutes = parseInt(max_fm_str.substring(3, max_fm_str.length));
+   plot_d = build_data_object(json);
+   let spaghetti_data = await spaghetti(cell_i, cell_j)
+   spaghetti_traces = build_traces(spaghetti_data)
+   await update();
+}
+
 
     function create_coord_array(coord, len, resolution) {
 
