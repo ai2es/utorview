@@ -10,6 +10,8 @@
 <!--<script src="https://cdn.jsdelivr.net/gh/nicolaspanel/numjs@0.15.1/dist/numjs.min.js"></script>-->
 <script>
 
+
+
     async function init() {
 
         let run_dates = await read_valid_dates()
@@ -21,17 +23,21 @@
             let opt = new Option(formatTimeLabel(rd), formatTimeValue(rd), default_selected, default_selected);
             date_sel.add(opt);
         })
+        let json = await load_data("wofs_sparse_prob_", "ML_PREDICTED_TOR");
 
         let wofs_x_length = 300;
         let wofs_y_length = 300;
         let resolution = 3000;
         let radius = resolution / 2;
         let orig_proj = "WGS84";
-        let wofs_proj = "+proj=lcc +lat_0=34.321392 +lon_0=-98.0134 +lat_1=30 +lat_2=60 +a=6370000 +b=6370000 +ellps=WGS84";
+        let base_proj = "+proj=lcc +lat_0=34.321392 +lon_0=-98.0134 +lat_1=30 +lat_2=60 +a=6370000 +b=6370000 +ellps=WGS84";
+        let base_transformer = proj4(base_proj, orig_proj);
+        let base_coord = base_transformer.inverse(json['fm_0']['se_coords']);
+        let wofs_proj = derive_new_proj(base_transformer, base_coord);
         let transformer = proj4(wofs_proj, orig_proj);
+        let coord = transformer.inverse(json['fm_0']['se_coords']);
         let spaghetti_traces = [];
         let cell_i, cell_j;
-        let json = await load_data("wofs_sparse_prob_", "ML_PREDICTED_TOR");
         let reflectivity = await load_data("wofs_sparse_prob_", "COMPOSITE_REFL_10CM");
         let fms =  Object.keys(json);
         let max_fm_str = fms[fms.length - 1];
@@ -39,11 +45,9 @@
         let plot_d = build_data_object(json);
         let total_grid_cells = json['fm_0']['MEM_median']['rows'].length;
 
-        let coord = transformer.inverse(json['fm_0']['se_coords']);
         let lon_array_m = create_coord_array(coord[0], wofs_x_length, resolution);
         let lat_array_m = create_coord_array(coord[1], wofs_y_length, resolution);
         let domain = get_wofs_domain_geom(lon_array_m, lat_array_m);
-        console.log(lon_array_m)
         let plot_data = plot_d['0_median'];
         let plot_geom = plot_data[0];
         let plot_coords = plot_data[1];
@@ -74,7 +78,7 @@
               showlegend: false
             };
 
-        let wofs_domain = {
+        wofs_domain = {
             type: "scattermapbox",
             showlegend: false,
             mode: 'lines',
@@ -143,9 +147,7 @@
             false);
 
     async function update() {
-
         let trace = select_trace(json, plot_d)
-        console.log(trace)
         plot_geom = trace[1][0]
         plot_coords = trace[1][1]
         let trace_values = trace[0]
@@ -169,19 +171,16 @@
 
 
         wofs_domain = {
-            type: "scattermapbox",
-            showlegend: false,
-            mode: 'lines',
-            line: {color: 'grey', width: 2},
-            lon: domain[0],
-            lat: domain[1],
-            };
+                type: "scattermapbox",
+                showlegend: false,
+                mode: 'lines',
+                line: {color: 'grey', width: 2},
+                lon: domain[0],
+                lat: domain[1]};
 
         layout["title"]["text"] = get_title_timestamp()
         layout["shapes"][0]["x0"] = minute
         layout["shapes"][0]["x1"] = minute
-        layout["mapbox"]["center"] = {lon: domain[2][0], lat: domain[2][1]}
-
 
         if (document.getElementById("refl").checked) {
 
@@ -206,6 +205,16 @@
         } else { all_traces = [map_data, spaghetti_traces, wofs_domain, cell_domain].flat();}
 
         Plotly.react(document.getElementById("mapview"), all_traces, layout);
+    }
+
+    function derive_new_proj(base_transformer, coord) {
+
+        let center_proj_x = coord[1] + (3000 * 150) + 1500
+        let center_proj_y = coord[0] + (3000 * 150) + 1500
+        let center_lonlat = base_transformer.forward([center_proj_y, center_proj_x])
+        let proj ="+proj=lcc +lat_0=" + center_lonlat[1] + " +lon_0=" + center_lonlat[0] + " +lat_1=30 +lat_2=60 +a=6370000 +b=6370000 +ellps=WGS84";
+
+        return proj
     }
 
     function get_selected_cell_geom(i, j, lon_array_m, lat_array_m) {
@@ -249,11 +258,8 @@
     function build_traces(trace_data) {
 
         let all_traces = []
-        // let forecast_minutes = d3.range(0, 365, 5)
-        let forecast_minutes = d3.range(0, max_minutes, 5)
-        // let forecast_minutes = get_timestamp(5);
+        let forecast_minutes = d3.range(0, max_minutes + 5, 5)
         console.log(forecast_minutes)
-        // let valid_time =
         for (let i=1; i<=trace_data.length; i++) {
             var trace = {
               x: forecast_minutes,
@@ -313,8 +319,7 @@
         const calc_median = (arr) => {return arr.slice().sort((a, b) => a - b)[Math.floor(arr.length / 2)]; };
 
         let d = {'length': 18, 'ens_mean': [], 'ens_median': []}
-            // for (let m of d3.range(0, 365, 5)) {
-            for (let m of d3.range(0, max_minutes, 5)) {
+            for (let m of d3.range(0, max_minutes + 5, 5)) {
                 let fm = "fm_" + m
                 let f = json[fm]
                 let ens_all_ts = []
@@ -363,7 +368,6 @@
         console.log(start_date);
         console.log(end_date)
         var end_hour =  end_date.getHours()
-        // var end_hour = parseInt(start_hour) + 6
         var date_range = d3.timeMinutes(start_date,
             end_date, interval)
         console.log("Date Range")
@@ -407,7 +411,6 @@
                                 parseInt(run_date_strs[i].substring(10, 12)))
             ));
         }
-        console.log(dates);
         dates = dates.filter(function(d) {return valid_init_hours.includes(d.getUTCHours());});
         dates = dates.reverse();
         return dates;
@@ -437,7 +440,6 @@
         let coord = transformer.inverse(data['fm_0']['se_coords']);
         let lon_array_m = create_coord_array(coord[0], wofs_x_length, resolution);
         let lat_array_m = create_coord_array(coord[1], wofs_y_length, resolution);
-        // for (let minutes of d3.range(0, 365, 5)) {
         for (let minutes of d3.range(0, max_minutes + 5, 5)) {
             let subset = data["fm_" + minutes]["MEM_" + member];
             let plot_data = create_geom_object(subset["rows"], subset["columns"], lon_array_m, lat_array_m)
@@ -456,10 +458,20 @@
 
 async function update_init_time() {
 
-
    document.getElementById("refl").checked = false;
    json = await load_data("wofs_sparse_prob_", "ML_PREDICTED_TOR");
    reflectivity = await load_data("wofs_sparse_prob_", "COMPOSITE_REFL_10CM");
+
+   base_coord = base_transformer.inverse(json['fm_0']['se_coords']);
+   wofs_proj = derive_new_proj(base_transformer, base_coord);
+   transformer = proj4(wofs_proj, orig_proj);
+   coord = transformer.inverse(json['fm_0']['se_coords']);
+   lon_array_m = create_coord_array(coord[0], wofs_x_length, resolution);
+   lat_array_m = create_coord_array(coord[1], wofs_y_length, resolution);
+   domain = get_wofs_domain_geom(lon_array_m, lat_array_m);
+   layout["mapbox"]["center"] = {lon: domain[2][0], lat: domain[2][1]};
+   layout["mapbox"]["zoom"] = 5
+
    fms =  Object.keys(json);
    max_fm_str = fms[fms.length - 1];
    max_minutes = parseInt(max_fm_str.substring(3, max_fm_str.length));
@@ -484,9 +496,11 @@ async function update_init_time() {
         var month = parseInt(datetime.substring(4, 6)) - 1
         var day = datetime.substring(6, 8)
         var hour = datetime.substring(8, 10)
-        var minutes = document.getElementById("forecast_minute").value
-
-        var date_string = String(new Date(year, month, day, hour, minutes))
+        var minute = datetime.substring(10, 12)
+        var forecast_minutes = document.getElementById("forecast_minute").value
+        var time_ms = new Date(year, month, day, hour, minute).getTime()
+        var forecast_mins_in_ms = forecast_minutes * 60 * 1000
+        var date_string = String(new Date(time_ms + forecast_mins_in_ms))
         return "Probabilitiy of Tornado: " + date_string
     }
 
