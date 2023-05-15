@@ -58,7 +58,7 @@
                 marker: {line: {width: 0},
                          opacity: 0.7},
                 z: json['fm_0']['MEM_median']['values'],
-                zmin: 0, zmax: 1,
+                zmin: 0, zmax: 0.75,
                 colorbar: {x: -0.05, thickness: 20},
                 hoverinfo: "z",
                 customdata: plot_coords,
@@ -161,7 +161,7 @@
             marker: {line: {width: 0},
                      opacity: 0.7},
             z: trace_values['values'],
-            zmin: 0, zmax: 1,
+            zmin: 0, zmax: 0.75,
             colorbar: {x: -0.05, thickness: 20},
             hoverinfo: "z",
             colorscale: 'YlGnBu',
@@ -259,7 +259,6 @@
 
         let all_traces = []
         let forecast_minutes = d3.range(0, max_minutes + 5, 5)
-        console.log(forecast_minutes)
         for (let i=1; i<=trace_data.length; i++) {
             var trace = {
               x: forecast_minutes,
@@ -498,10 +497,10 @@ async function update_init_time() {
         var hour = datetime.substring(8, 10)
         var minute = datetime.substring(10, 12)
         var forecast_minutes = document.getElementById("forecast_minute").value
-        var time_ms = new Date(year, month, day, hour, minute).getTime()
+        var time_ms = new Date(Date.UTC(year, month, day, hour, minute)).getTime()
         var forecast_mins_in_ms = forecast_minutes * 60 * 1000
-        var date_string = String(new Date(time_ms + forecast_mins_in_ms))
-        return "Probabilitiy of Tornado: " + date_string
+        var date_string = new Date(time_ms + forecast_mins_in_ms).toUTCString()
+        return "Probability of Tornado: " + date_string
     }
 
     function create_geom(i, j, lons, lats) {
