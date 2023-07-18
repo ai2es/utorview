@@ -21,8 +21,11 @@
         let transformer = proj4(wofs_proj, orig_proj);
         let spaghetti_traces = [];
         let cell_i, cell_j;
-        let json = await load_data();
-        let plot_d = build_data_object(json);
+	let msg_file_len = get_ens_file_strings(5).length;
+	let json = {};
+	await load_data_parallel(0,1,json);
+	let plot_d = {}
+        build_data_object(0,1,json,plot_d);
         let total_grid_cells = json['fm_0']['MEM_1']['rows'].length;
         let coord = transformer.inverse(json['fm_0']['se_coords']);
         let lon_array_m = create_coord_array(coord[0], wofs_x_length, resolution);
@@ -105,7 +108,8 @@
 
 
         Plotly.newPlot(document.getElementById("mapview"), all_traces, layout);
-
+	await load_data_parallel(1,msg_file_len,json);
+	build_data_object(1,msg_file_len,json,plot_d);
         document.getElementById('mapview').on('plotly_click', get_spaghetti);
         document.getElementById('ens_mem').addEventListener('change', update_mem);
         document.getElementById('forecast_minute').addEventListener('change', update);
@@ -200,7 +204,9 @@
     function build_traces(trace_data) {
 
         let all_traces = []
-        let forecast_minutes = d3.range(0, 365, 5)
+        //let forecast_minutes = d3.range(0, 20, 5)
+	let forecast_minutes = d3.range(0, 365, 5)
+
 
         for (let i=1; i<=trace_data.length; i++) {
             var trace = {
@@ -245,7 +251,8 @@
         const calc_median = (arr) => {return arr.slice().sort((a, b) => a - b)[Math.floor(arr.length / 2)]; };
 
         let d = {'length': 18, 'ens_mean': [], 'ens_median': []}
-            for (let m of d3.range(0, 365, 5)) {
+	    for (let m of d3.range(0, 365, 5)) {
+            //for (let m of d3.range(0, 20, 5)) {
                 let fm = "fm_" + m
                 let f = json[fm]
                 let ens_all_ts = []
@@ -289,43 +296,44 @@
         return file_list;
     }
 
-    async function load_data() {
-
-        var file_list = get_ens_file_strings(5)
-        var data = {}
-        for (let i=0; i<file_list.length; i++) {
-            let response = await fetch(file_list[i])
-            let d = await MessagePack.decodeAsync(response.body)
-            let key = "fm_" + String(i*5)
-            data[key] = d
-        }
-        return data;
+    async function load_data_parallel(start,end,json_out) {
+	var file_list = get_ens_file_strings(5).slice(start,end)
+	return Promise.all(file_list.map(url => fetch(url)))
+	    .then(responses => Promise.all(responses.map(response => MessagePack.decodeAsync(response.body))))
+	    .then(messages => {
+		j = start
+		 for (let i=0; i<messages.length; i++) {
+		    let key = "fm_" + String(j*5)
+		     json_out[key] = messages[i]
+		     j += 1
+		}
+	    });
     }
 
-    function build_data_object(data) {
+    function build_data_object(start,end,data,obj_dict_out) {
 
         let member = document.getElementById("ens_mem").value
-        let obj_dict = {}
         let coord = transformer.inverse(data['fm_0']['se_coords'])
         let lon_array_m = create_coord_array(coord[0], wofs_x_length, resolution)
         let lat_array_m = create_coord_array(coord[1], wofs_y_length, resolution)
-        for (let minutes of d3.range(0, 365, 5)) {
+	for (let minutes of d3.range(start*5, end, 5)) {
             let subset = data["fm_" + minutes]["MEM_" + member]
             let plot_data = create_geom_object(subset["rows"], subset["columns"], lon_array_m, lat_array_m)
-            obj_dict[minutes + "_" + member] = plot_data
+            obj_dict_out[minutes + "_" + member] = plot_data
         }
-        return obj_dict;
     }
 
     function update_mem() {
-        plot_d = build_data_object(json);
+        plot_d = {}
+	build_data_object(0,msg_file_len,json,plot_d);
         update();
     }
 
     async function update_init_time() {
-
-        json = await load_data();
-        plot_d = build_data_object(json);
+	json = {}
+	await load_data_parallel(0,msg_file_len,json);
+        plot_d = {}
+	build_data_object(0,msg_file_len,json,plot_d);
         let spaghetti_data = await spaghetti(cell_i, cell_j)
         spaghetti_traces = build_traces(spaghetti_data)
         await update();
