@@ -4,7 +4,7 @@
     <link rel="stylesheet" href="style.css">
     <title>WoFS U-Net Tornado Viewer</title>
 <script src="https://d3js.org/d3.v7.min.js"></script>
-<script src="https://cdn.plot.ly/plotly-2.11.1.min.js"></script>
+<script src="https://cdn.plot.ly/plotly-2.24.1.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.8.0/proj4.js"></script>
 <script src="https://unpkg.com/@msgpack/msgpack@2.8.0/dist.es5+umd/msgpack.min.js"></script>
 <!--<script src="https://cdn.jsdelivr.net/gh/nicolaspanel/numjs@0.15.1/dist/numjs.min.js"></script>-->
@@ -34,7 +34,10 @@
         let plot_data = plot_d['0_1'];
         let plot_geom = plot_data[0];
         let plot_coords = plot_data[1];
+	let config = {mapboxAccessToken: "pk.eyJ1IjoiYnBldHprZSIsImEiOiJjbGtsY2I1cTAwNnR1M21wY3kxZnk3NG0xIn0.VBcAZDXsltnUxPWsj6TJPA"};
 
+	let fcst_dates = get_fcst_date_range(5);
+	
         let map_data = {type: "choroplethmapbox",
                     locations: d3.range(total_grid_cells),
                     marker: {line: {width: 0},
@@ -45,10 +48,10 @@
                     hoverinfo: "z",
                     customdata: plot_coords,
                     // hovertemplate: "%{customdata}",
-                    geojson: plot_geom};
+		    geojson: plot_geom};
 
         let init_trace = {
-              x: [180],
+              x: [fcst_dates[36]],
               y: [0.25],
               text: ['Click on a probability grid cell to display a spaghetti plot of all ensemble members.'],
               textfont: {size: 16},
@@ -81,23 +84,45 @@
         let layout = {
             title: {text: get_title_timestamp(), x: 0.05, font: {size: 22}},
             mapbox: {
-                style: "open-street-map",
+		//style: "satellite-streets",
+		style: "dark",
+                //style: "open-street-map",
+		/*
+		layers: [
+		    {
+			sourcetype: "raster",
+                        source: ["https://basemap.nationalmap.gov/arcgis/rest/services/USGSImageryOnly/MapServer/tile/{z}/{y}/{x}"],
+                        below: "traces"
+		    }
+		],
+		*/
+		layers: [
+		    {
+			sourcetype: "geojson",
+			source: "data_geojson/geojson-counties-fips.json",
+			type: "line",
+			color: "purple",
+			line: {"width": 0.75},
+			below: "traces"
+		    }
+		],
                 center: {lon: -96, lat: 35},
                 zoom: 5},
             showlegend: true,
             grid: {rows: 1, columns: 2, pattern: 'independent'},
             height: 800,
             yaxis2: {range: [0, 0.5], title: {text:'Probability of Tornado', font: {size: 20}}},
-            xaxis2: {range: [0, 360], title: {text:'Forecast Minute', font: {size: 20}}},
+            xaxis2: {range: [fcst_dates[0], fcst_dates[fcst_dates.length-1]], title: {text:'Forecast Date/Time', font: {size: 20}}, tickformat: '%m-%d %H:%M', tickangle: 35},
             shapes: [{type: 'line',
-                      x0: 0,
+                      x0: fcst_dates[0],
                       y0: 0,
-                      x1: 0,
+                      x1: fcst_dates[0],
                       y1: 0.5,
-                opacity: 0.3,
+                      opacity: 0.3,
                       line: {color: 'rgba(0,128,26,0.68)',
                              width: 10,
-                             opacity: 0.5}}],
+                             opacity: 0.5}}
+		    ],
             legend: {
                 y: 1,
                 x: 0.95,
@@ -107,7 +132,7 @@
             }};
 
 
-        Plotly.newPlot(document.getElementById("mapview"), all_traces, layout);
+        Plotly.newPlot(document.getElementById("mapview"), all_traces, layout, config);
 	await load_data_parallel(1,msg_file_len,json);
 	build_data_object(1,msg_file_len,json,plot_d);
         document.getElementById('mapview').on('plotly_click', get_spaghetti);
@@ -204,8 +229,7 @@
     function build_traces(trace_data) {
 
         let all_traces = []
-        //let forecast_minutes = d3.range(0, 20, 5)
-	let forecast_minutes = d3.range(0, 365, 5)
+	let forecast_minutes = get_fcst_date_range(5);
 
 
         for (let i=1; i<=trace_data.length; i++) {
@@ -405,6 +429,19 @@
         document.getElementById("forecast_minute").value = new_time;
         update();
     }}
+
+
+  function get_fcst_date_range(interval) {
+      let datetime = document.getElementById("model_run").value
+      let year = datetime.substring(0, 4)
+      let month = parseInt(datetime.substring(4, 6)) - 1
+      let day = datetime.substring(6, 8)
+      let start_hour = datetime.substring(8, 10)
+      let end_hour = parseInt(start_hour) + 6
+      let date_range = d3.timeMinutes(new Date(year, month, day, start_hour, 0),
+				      new Date(year, month, day, end_hour, 5), interval)
+      return date_range;
+  }
 
 </script>
 <body onload="init()">
