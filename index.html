@@ -5,7 +5,633 @@
     <title>WoFS U-Net Tornado Viewer</title>
 <script src="https://d3js.org/d3.v7.min.js"></script>
 <script src="https://cdn.plot.ly/plotly-2.11.1.min.js"></script>
-<body>
-Test
+<script src="https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.8.0/proj4.js"></script>
+<script src="https://unpkg.com/@msgpack/msgpack@2.8.0/dist.es5+umd/msgpack.min.js"></script>
+<!--<script src="https://cdn.jsdelivr.net/gh/nicolaspanel/numjs@0.15.1/dist/numjs.min.js"></script>-->
+<script>
+
+
+
+    async function init() {
+
+        let run_dates = await read_valid_dates()
+        let date_sel = document.getElementById("model_run");
+        const formatTimeValue = d3.utcFormat("%Y%m%d%H%M");
+        const formatTimeLabel = d3.utcFormat("%Y %b %d %H%M UTC");
+        run_dates.forEach(function(rd) {
+            let default_selected = false;
+            let opt = new Option(formatTimeLabel(rd), formatTimeValue(rd), default_selected, default_selected);
+            date_sel.add(opt);
+        })
+        let json = await load_data("wofs_sparse_prob_", "ML_PREDICTED_TOR");
+
+        let wofs_x_length = 300;
+        let wofs_y_length = 300;
+        let resolution = 3000;
+        let radius = resolution / 2;
+        let orig_proj = "WGS84";
+        let base_proj = "+proj=lcc +lat_0=34.321392 +lon_0=-98.0134 +lat_1=30 +lat_2=60 +a=6370000 +b=6370000 +ellps=WGS84";
+        let base_transformer = proj4(base_proj, orig_proj);
+        let base_coord = base_transformer.inverse(json['fm_0']['se_coords']);
+        let wofs_proj = derive_new_proj(base_transformer, base_coord);
+        let transformer = proj4(wofs_proj, orig_proj);
+        let coord = transformer.inverse(json['fm_0']['se_coords']);
+        let spaghetti_traces = [];
+        let cell_i, cell_j;
+        let reflectivity = await load_data("wofs_sparse_prob_", "COMPOSITE_REFL_10CM");
+        let fms =  Object.keys(json);
+        let max_fm_str = fms[fms.length - 1];
+        let max_minutes = parseInt(max_fm_str.substring(3, max_fm_str.length));
+        let plot_d = build_data_object(json);
+        let total_grid_cells = json['fm_0']['MEM_median']['rows'].length;
+
+        let lon_array_m = create_coord_array(coord[0], wofs_x_length, resolution);
+        let lat_array_m = create_coord_array(coord[1], wofs_y_length, resolution);
+        let domain = get_wofs_domain_geom(lon_array_m, lat_array_m);
+        let plot_data = plot_d['0_median'];
+        let plot_geom = plot_data[0];
+        let plot_coords = plot_data[1];
+        let refl_data, plot_r, total_grid_cells_r, plot_geom_r, plot_coords_r;
+
+        let map_data = {type: "choroplethmapbox",
+                locations: d3.range(total_grid_cells),
+                marker: {line: {width: 0},
+                         opacity: 0.7},
+                z: json['fm_0']['MEM_median']['values'],
+                zmin: 0, zmax: 0.75,
+                colorbar: {x: -0.05, thickness: 20},
+                hoverinfo: "z",
+                customdata: plot_coords,
+                colorscale: 'YlGnBu',
+                // hovertemplate: "%{customdata}",
+                geojson: plot_geom};
+
+        let init_trace = {
+              x: [180],
+              y: [0.25],
+              text: ['Click on a probability grid cell to display a spaghetti plot of all ensemble members.'],
+              textfont: {size: 16},
+              mode: 'text',
+              xaxis: 'x2',
+              yaxis: 'y2',
+              type: 'scatter',
+              showlegend: false
+            };
+
+        wofs_domain = {
+            type: "scattermapbox",
+            showlegend: false,
+            mode: 'lines',
+            line: {color: 'grey', width: 2},
+            lon: domain[0],
+            lat: domain[1],
+            };
+
+        let cell_domain = {
+            type: "scattermapbox",
+            showlegend: false,
+            mode: 'lines',
+            line: {color: 'black', width: 2},
+            lon: null,
+            lat: null};
+
+        let all_traces = [map_data, init_trace, wofs_domain, cell_domain].flat();
+
+        let layout = {
+            title: {text: get_title_timestamp(), x: 0.05, font: {size: 22}},
+            mapbox: {
+                style: "open-street-map",
+                center: {lon: domain[2][0], lat: domain[2][1]},
+                zoom: 5},
+            showlegend: true,
+            grid: {rows: 1, columns: 2, pattern: 'independent'},
+            height: 800,
+            yaxis2: {range: [0, 0.5], title: {text:'Probability of Tornado', font: {size: 20}}},
+            xaxis2: {tickmode:"linear", tick0: 0, dtick:15, title: {text:'Forecast Minute', font: {size: 20}}},
+
+            // xaxis2: {range: get_timestamp(5), title: {text:'Forecast Minute', font: {size: 20}}, tickformat: '%H:%M:%S'},
+            shapes: [{type: 'line',
+                      x0: 0,
+                      y0: 0,
+                      x1: 0,
+                      y1: 0.5,
+                opacity: 0.3,
+                      line: {color: 'rgba(0,128,26,0.68)',
+                             width: 10,
+                             opacity: 0.5}}],
+            legend: {
+                y: 1,
+                x: 0.95,
+                xaxis: 'x2',
+                yaxis: 'y2',
+                font: {size: 18},
+            }};
+
+
+        Plotly.newPlot(document.getElementById("mapview"), all_traces, layout);
+
+        document.getElementById('refl').addEventListener('change', async function() {
+                plot_r = build_data_object(reflectivity);
+                update();
+        });
+
+        document.getElementById('refl_alpha').addEventListener('change', update);
+        document.getElementById('mapview').on('plotly_click', get_spaghetti);
+        document.getElementById('ens_mem').addEventListener('change', update_mem);
+        document.getElementById('forecast_minute').addEventListener('change', update);
+        document.getElementById('model_run').addEventListener('change', update_init_time);
+        document.addEventListener('keypress', function(event) {
+            let code = event.code;
+            if (code === "Period") {update_time("forward");}
+            if (code === "Comma") {update_time("backward");}},
+            false);
+
+    async function update() {
+        let trace = select_trace(json, plot_d)
+        plot_geom = trace[1][0]
+        plot_coords = trace[1][1]
+        let trace_values = trace[0]
+        total_grid_cells = trace_values['rows'].length
+
+        let minute = parseInt(document.getElementById("forecast_minute").value)
+        let refl_alpha = document.getElementById("refl_alpha").value / 100
+
+        map_data = {type: "choroplethmapbox",
+            locations: d3.range(total_grid_cells),
+            marker: {line: {width: 0},
+                     opacity: 0.7},
+            z: trace_values['values'],
+            zmin: 0, zmax: 0.75,
+            colorbar: {x: -0.05, thickness: 20},
+            hoverinfo: "z",
+            colorscale: 'YlGnBu',
+            customdata: plot_coords,
+            geojson: plot_geom};
+
+
+
+        wofs_domain = {
+                type: "scattermapbox",
+                showlegend: false,
+                mode: 'lines',
+                line: {color: 'grey', width: 2},
+                lon: domain[0],
+                lat: domain[1]};
+
+        layout["title"]["text"] = get_title_timestamp()
+        layout["shapes"][0]["x0"] = minute
+        layout["shapes"][0]["x1"] = minute
+
+        if (document.getElementById("refl").checked) {
+
+            let trace_r = select_trace(reflectivity, plot_r)
+            plot_geom_r = trace_r[1][0]
+            plot_coords_r = trace_r[1][1]
+            let trace_values_r = trace_r[0]
+            total_grid_cells_r = trace_values_r['rows'].length
+
+            refl_data = {type: "choroplethmapbox",
+                locations: d3.range(total_grid_cells_r),
+                marker: {line: {width: 0},
+                         opacity: refl_alpha},
+                z: trace_values_r['values'],
+                zmin: 0, zmax: 80,
+                colorbar: {x: 0.22, y: -0.1, orientation: 'h', thickness: 15, len: 0.45},
+                hoverinfo: "skip",
+                customdata: plot_coords_r,
+                colorscale: 'Jet',
+                geojson: plot_geom_r};
+            all_traces = [map_data, refl_data, spaghetti_traces, wofs_domain, cell_domain].flat();
+        } else { all_traces = [map_data, spaghetti_traces, wofs_domain, cell_domain].flat();}
+
+        Plotly.react(document.getElementById("mapview"), all_traces, layout);
+    }
+
+    function derive_new_proj(base_transformer, coord) {
+
+        let center_proj_x = coord[1] + (3000 * 150) + 1500
+        let center_proj_y = coord[0] + (3000 * 150) + 1500
+        let center_lonlat = base_transformer.forward([center_proj_y, center_proj_x])
+        let proj ="+proj=lcc +lat_0=" + center_lonlat[1] + " +lon_0=" + center_lonlat[0] + " +lat_1=30 +lat_2=60 +a=6370000 +b=6370000 +ellps=WGS84";
+
+        return proj
+    }
+
+    function get_selected_cell_geom(i, j, lon_array_m, lat_array_m) {
+
+        let geom = create_geom(i, j, lon_array_m, lat_array_m)
+        let lons = geom.map(item => item[0])
+        let lats = geom.map(item => item[1])
+
+        cell_domain = {
+                type: "scattermapbox",
+                showlegend: false,
+                mode: 'lines',
+                line: {color: 'black', width: 2},
+                lon: lons,
+                lat: lats,
+                hoverinfo: "skip"};
+
+        return cell_domain}
+
+    function get_wofs_domain_geom(lon_array_m, lat_array_m) {
+
+        let se = transformer.forward([lon_array_m[0], lat_array_m[0]]);
+        let sw = transformer.forward([lon_array_m[wofs_x_length - 1], lat_array_m[0]]);
+        let nw = transformer.forward([lon_array_m[wofs_x_length - 1], lat_array_m[wofs_y_length - 1]]);
+        let ne = transformer.forward([lon_array_m[0], lat_array_m[wofs_y_length - 1]]);
+        let center = transformer.forward([lon_array_m[Math.floor(wofs_x_length / 2)], lat_array_m[Math.floor(wofs_y_length / 2)]])
+        let lons = [se[0], sw[0], nw[0], ne[0], se[0]]
+        let lats = [se[1], sw[1], nw[1], ne[1], se[1]]
+
+        return [lons, lats, center]
+    }
+
+    function select_trace(data, geom) {
+
+        let member = document.getElementById("ens_mem").value
+        let time = document.getElementById("forecast_minute").value
+        let p = data["fm_" + String(parseInt(time))]['MEM_' + member]
+        let geo = geom[String(parseInt(time)) + "_" + member]
+        return [p, geo]
+    }
+    function build_traces(trace_data) {
+
+        let all_traces = []
+        let forecast_minutes = d3.range(0, max_minutes + 5, 5)
+        for (let i=1; i<=trace_data.length; i++) {
+            var trace = {
+              x: forecast_minutes,
+              y: trace_data[i],
+              xaxis: 'x2',
+              yaxis: 'y2',
+              type: 'scatter',
+              showlegend: false,
+              line: {color: 'lightgrey', width: 1}
+            };
+            all_traces.push(trace)
+        }
+        var mean = {
+              name: "Mean",
+              x: forecast_minutes,
+              y: trace_data["ens_mean"],
+              xaxis: 'x2',
+              yaxis: 'y2',
+              type: 'scatter',
+              line: {color: 'black', width: 4}
+            };
+        all_traces.push(mean)
+
+        var median = {
+              name: 'Median',
+              x: forecast_minutes,
+              y: trace_data["ens_median"],
+              xaxis: 'x2',
+              yaxis: 'y2',
+              type: 'scatter',
+              line: {color: 'black', width: 2, dash: 'dot'}
+            };
+        all_traces.push(median)
+
+        return all_traces
+    }
+
+    async function get_spaghetti(point_data) {
+
+        let pt = (point_data.points || [])[0]
+        let index = pt.customdata
+        cell_i = index[0]
+        cell_j = index[1]
+        let spaghetti_data = await spaghetti(cell_i, cell_j)
+        spaghetti_traces = build_traces(spaghetti_data)
+        cell_domain = get_selected_cell_geom(index[0], index[1], lon_array_m, lat_array_m)
+        if (document.getElementById("refl").checked) {
+            all_traces = [map_data, refl_data, spaghetti_traces, wofs_domain, cell_domain].flat();
+        } else { all_traces = [map_data, spaghetti_traces, wofs_domain, cell_domain].flat();}
+
+        Plotly.react(document.getElementById("mapview"), all_traces, layout);
+        }
+
+    async function spaghetti(i, j) {
+
+        const calc_mean = array => array.reduce((a, b) => a + b) / array.length
+        const calc_median = (arr) => {return arr.slice().sort((a, b) => a - b)[Math.floor(arr.length / 2)]; };
+
+        let d = {'length': 18, 'ens_mean': [], 'ens_median': []}
+            for (let m of d3.range(0, max_minutes + 5, 5)) {
+                let fm = "fm_" + m
+                let f = json[fm]
+                let ens_all_ts = []
+                for (mem=1; mem<19; mem++) {
+                    if (m===0) { d[mem] = [] }
+                    var member = "MEM_" + String(mem)
+                    var found = false
+                    let row_indices = f[member]['rows'].flatMap((x, z) => x === i ? z : [])
+                    for (index=0; index<row_indices.length; index++) {
+                        if (f[member]['columns'][row_indices[index]] === j) {
+                            d[mem].push(f[member]['values'][row_indices[index]])
+                            found = true
+                        }
+                    }
+                    if (found === false) { d[mem].push(0) }
+                    ens_all_ts.push(d[mem][m/5])
+                }
+            let mean_ens = calc_mean(ens_all_ts)
+            let median_ens = calc_median(ens_all_ts)
+            d['ens_mean'].push(mean_ens)
+            d['ens_median'].push(median_ens)
+        }
+        return d
+        }
+
+    function get_ens_file_strings(file_prefix, interval, variable) {
+        const formatTime = d3.timeFormat("%Y%m%d%H%M00");
+        var datetime = document.getElementById("model_run").value;
+        var year = datetime.substring(0, 4);
+        var month = parseInt(datetime.substring(4, 6)) - 1
+        var day = datetime.substring(6, 8)
+        var start_hour = datetime.substring(8, 10)
+        var start_min = datetime.substring(10, 12)
+        var start_hour_int = parseInt(start_hour)
+        if (start_hour_int <=4)
+        {
+            var start_date = new Date(year, month, day, start_hour, start_min);
+            start_date = new Date(start_date.getTime() + 86400000);
+        }
+        else
+        {
+            start_date = new Date(year, month, day, start_hour, start_min);
+        }
+        end_date = new Date(start_date.getTime() + 3 * 3600000 + 5 * 60000)
+        console.log("Start and End dates");
+        console.log(start_date);
+        console.log(end_date)
+        var end_hour =  end_date.getHours()
+        var date_range = d3.timeMinutes(start_date,
+            end_date, interval)
+        console.log("Date Range")
+        console.log(date_range)
+        let file_list = [];
+        let init_time = document.getElementById("model_run").value.substring(0, 8)
+        date_range.forEach(function(x) {file_list.push("https://wofsdltornado.blob.core.windows.net/wofs-dl-preds/"
+            + init_time + start_hour + start_min + "/" + file_prefix +  formatTime(x) + "_" + variable + ".msgpk")});
+        console.log(file_list);
+        return file_list;
+    }
+
+
+    // function get_timestamp(interval) {
+    //
+    //     const formatTime = d3.timeFormat("%H%M")
+    //     var datetime = document.getElementById("model_run").value
+    //     var year = datetime.substring(0, 4)
+    //     var month = parseInt(datetime.substring(4, 6)) - 1
+    //     var day = datetime.substring(6, 8)
+    //     var start_hour = datetime.substring(8, 10)
+    //     var end_hour = parseInt(start_hour) + 3
+    //     var date_range = d3.timeMinutes(new Date(year, month, day, start_hour, 0),
+    //         new Date(year, month, day, end_hour, 5), interval)
+    //     return date_range;
+    // }
+
+    async function read_valid_dates(valid_init_hours=[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23])
+    {
+        let date_filename = "https://wofsdltornado.blob.core.windows.net/wofs-dl-preds/available_dates.csv";
+        console.log(date_filename)
+        let date_resp = await fetch(date_filename);
+        let date_str = await date_resp.text();
+        let run_date_strs = date_str.split("\n");
+        let dates = [];
+        for (let i=0; i< run_date_strs.length; i++) {
+            dates.push(new Date(Date.UTC(parseInt(run_date_strs[i].substring(0, 4)),
+                                parseInt(run_date_strs[i].substring(4, 6)) -1,
+                                parseInt(run_date_strs[i].substring(6, 8)),
+                                parseInt(run_date_strs[i].substring(8, 10)),
+                                parseInt(run_date_strs[i].substring(10, 12)))
+            ));
+        }
+        dates = dates.filter(function(d) {return valid_init_hours.includes(d.getUTCHours());});
+        dates = dates.reverse();
+        return dates;
+    }
+
+
+
+    async function load_data(file_prefix, variable) {
+
+        var file_list = get_ens_file_strings(file_prefix, 5, variable)
+        var data = {}
+        for (let i=0; i<file_list.length; i++) {
+            let response = await fetch(file_list[i])
+            let d = await MessagePack.decodeAsync(response.body)
+            let key = "fm_" + String(i*5)
+            data[key] = d
+        }
+        console.log(variable);
+        console.log(data);
+        return data;
+    }
+
+    function build_data_object(data) {
+
+        let member = document.getElementById("ens_mem").value
+        let obj_dict = {}
+        let coord = transformer.inverse(data['fm_0']['se_coords']);
+        let lon_array_m = create_coord_array(coord[0], wofs_x_length, resolution);
+        let lat_array_m = create_coord_array(coord[1], wofs_y_length, resolution);
+        for (let minutes of d3.range(0, max_minutes + 5, 5)) {
+            let subset = data["fm_" + minutes]["MEM_" + member];
+            let plot_data = create_geom_object(subset["rows"], subset["columns"], lon_array_m, lat_array_m)
+            obj_dict[minutes + "_" + member] = plot_data
+        }
+        return obj_dict;
+    }
+
+    function update_mem() {
+        plot_d = build_data_object(json);
+        if (document.getElementById("refl").checked) {
+            plot_r = build_data_object(reflectivity)
+        }
+        update();
+    }
+
+async function update_init_time() {
+
+   document.getElementById("refl").checked = false;
+   json = await load_data("wofs_sparse_prob_", "ML_PREDICTED_TOR");
+   reflectivity = await load_data("wofs_sparse_prob_", "COMPOSITE_REFL_10CM");
+
+   base_coord = base_transformer.inverse(json['fm_0']['se_coords']);
+   wofs_proj = derive_new_proj(base_transformer, base_coord);
+   transformer = proj4(wofs_proj, orig_proj);
+   coord = transformer.inverse(json['fm_0']['se_coords']);
+   lon_array_m = create_coord_array(coord[0], wofs_x_length, resolution);
+   lat_array_m = create_coord_array(coord[1], wofs_y_length, resolution);
+   domain = get_wofs_domain_geom(lon_array_m, lat_array_m);
+   layout["mapbox"]["center"] = {lon: domain[2][0], lat: domain[2][1]};
+   layout["mapbox"]["zoom"] = 5
+
+   fms =  Object.keys(json);
+   max_fm_str = fms[fms.length - 1];
+   max_minutes = parseInt(max_fm_str.substring(3, max_fm_str.length));
+   plot_d = build_data_object(json);
+   let spaghetti_data = await spaghetti(cell_i, cell_j)
+   spaghetti_traces = build_traces(spaghetti_data)
+   await update();
+}
+
+
+    function create_coord_array(coord, len, resolution) {
+
+        let array = new Array(len);
+        for (let i=0; i<len; i++) { array[i] = coord + (resolution * i); }
+        return array
+    }
+
+    function get_title_timestamp() {
+
+        var datetime = document.getElementById("model_run").value
+        var year = datetime.substring(0, 4)
+        var month = parseInt(datetime.substring(4, 6)) - 1
+        var day = datetime.substring(6, 8)
+        var hour = datetime.substring(8, 10)
+        var minute = datetime.substring(10, 12)
+        var forecast_minutes = document.getElementById("forecast_minute").value
+        var time_ms = new Date(Date.UTC(year, month, day, hour, minute)).getTime()
+        var forecast_mins_in_ms = forecast_minutes * 60 * 1000
+        var date_string = new Date(time_ms + forecast_mins_in_ms).toUTCString()
+        return "Probability of Tornado: " + date_string
+    }
+
+    function create_geom(i, j, lons, lats) {
+
+        let south_lat_m = lats[i] - radius
+        let north_lat_m = lats[i] + radius
+        let west_lon_m = lons[j] - radius
+        let east_lon_m = lons[j] + radius
+
+        let se = transformer.forward([east_lon_m, south_lat_m])
+        let ne = transformer.forward([east_lon_m, north_lat_m])
+        let sw = transformer.forward([west_lon_m, south_lat_m])
+        let nw = transformer.forward([west_lon_m, north_lat_m])
+
+        return [sw, nw, ne, se, sw]}
+
+    function create_geom_object(i_indices, j_indices, lons, lats) {
+
+        let coords = new Array(i_indices.length)
+        let grid_obj = {type: "FeatureCollection", features: new Array(i_indices.length)}
+        for (index of d3.range(i_indices.length)) {
+            coords[index] = [i_indices[index], j_indices[index]]
+            let geom = create_geom(i_indices[index], j_indices[index], lons, lats)
+            let grid_cell_obj = {type: "Feature",
+                                 id: index,
+                                 geometry: {type: "Polygon", coordinates: [geom]}}
+            grid_obj["features"][index] = grid_cell_obj
+        }
+        return [grid_obj, coords]
+    }
+
+    function update_time(direction) {
+
+        let selectElement = document.querySelectorAll('[name=forecast_minute]');
+        let valid_times = [...selectElement[0].options].map(o => o.value)
+        let current = document.getElementById("forecast_minute").value;
+        let current_int = parseInt(current);
+        var new_time;
+        if (direction == "forward") {
+            new_time = String(current_int + 5).padStart(2, '0');
+            if (!valid_times.includes(new_time)) {new_time = valid_times[0]}}
+
+        if (direction == "backward") {
+            new_time = String(current_int - 5).padStart(2, '0');
+            if (!valid_times.includes(new_time)) {new_time = valid_times[valid_times.length - 1]}}
+        document.getElementById("forecast_minute").value = new_time;
+        update();
+    }}
+</script>
+<body onload="init()">
+<div id="menubar">
+    <label for="model_run">Model Run: </label>
+    <select id="model_run" name="model_run">
+    </select>
+    <label for="ens_mem">Ensemble Member: </label>
+        <select id="ens_mem" name="ens_mem">
+        <option value="median" selected>Median</option>
+        <option value="mean">Mean</option>
+        <option value="max">Max</option>
+        <option value="1">Member 1</option>
+        <option value="2" >Member 2</option>
+        <option value="3">Member 3</option>
+        <option value="4">Member 4</option>
+        <option value="5">Member 5</option>
+        <option value="6">Member 6</option>
+        <option value="7">Member 7</option>
+        <option value="8">Member 8</option>
+        <option value="9">Member 9</option>
+        <option value="10">Member 10</option>
+        <option value="11">Member 11</option>
+        <option value="12">Member 12</option>
+        <option value="13">Member 13</option>
+        <option value="14">Member 14</option>
+        <option value="15">Member 15</option>
+        <option value="16">Member 16</option>
+        <option value="17">Member 17</option>
+        <option value="18">Member 18</option>
+    </select>
+    <label for="forecast_minute">Forecast Hour: </label>
+    <select id="forecast_minute" name="forecast_minute">
+        <option value="00" selected>00:00</option>
+        <option value="05">00:05</option>
+        <option value="10">00:10</option>
+        <option value="15">00:15</option>
+        <option value="20">00:20</option>
+        <option value="25">00:25</option>
+        <option value="30">00:30</option>
+        <option value="35">00:35</option>
+        <option value="40">00:40</option>
+        <option value="45">00:45</option>
+        <option value="50">00:50</option>
+        <option value="55">00:55</option>
+        <option value="60">01:00</option>
+        <option value="65">01:05</option>
+        <option value="70">01:10</option>
+        <option value="75">01:15</option>
+        <option value="80">01:20</option>
+        <option value="85">01:25</option>
+        <option value="90">01:30</option>
+        <option value="95">01:35</option>
+        <option value="100">01:40</option>
+        <option value="105">01:45</option>
+        <option value="110">01:50</option>
+        <option value="115">01:55</option>
+        <option value="120">02:00</option>
+        <option value="125">02:05</option>
+        <option value="130">02:10</option>
+        <option value="135">02:15</option>
+        <option value="140">02:20</option>
+        <option value="145">02:25</option>
+        <option value="150">02:30</option>
+        <option value="155">02:35</option>
+        <option value="160">02:40</option>
+        <option value="165">02:45</option>
+        <option value="170">02:50</option>
+        <option value="175">02:55</option>
+        <option value="180">03:00</option>
+
+    </select>
+
+  <input type="checkbox", id="refl">
+    <label for="refl">Reflectivity Overlay</label>
+    <input type="range" min="0" max="100" value="10" class="slider" id="refl_alpha">
+</div>
+
+<div id="mapview">
+</div>
+</div>
+<div id="spaghetti">
+</div>
+<div id="dvals">
+</div>
 </body>
 </html>
