@@ -4,7 +4,7 @@
     <link rel="stylesheet" href="style.css">
     <title>WoFS U-Net Tornado Viewer</title>
 <script src="https://d3js.org/d3.v7.min.js"></script>
-<script src="https://cdn.plot.ly/plotly-2.11.1.min.js"></script>
+<script src="https://cdn.plot.ly/plotly-2.24.1.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.8.0/proj4.js"></script>
 <script src="https://unpkg.com/@msgpack/msgpack@2.8.0/dist.es5+umd/msgpack.min.js"></script>
 <!--<script src="https://cdn.jsdelivr.net/gh/nicolaspanel/numjs@0.15.1/dist/numjs.min.js"></script>-->
@@ -23,8 +23,9 @@
             let opt = new Option(formatTimeLabel(rd), formatTimeValue(rd), default_selected, default_selected);
             date_sel.add(opt);
         })
-        let json = await load_data("wofs_sparse_prob_", "ML_PREDICTED_TOR");
-
+	let msg_file_len = get_ens_file_strings("wofs_sparse_prob_",5,"ML_PREDICTED_TOR").length;
+	let json = {};
+	await load_data_parallel("wofs_sparse_prob_","ML_PREDICTED_TOR",0,1,json);
         let wofs_x_length = 300;
         let wofs_y_length = 300;
         let resolution = 3000;
@@ -39,10 +40,8 @@
         let spaghetti_traces = [];
         let cell_i, cell_j;
         let reflectivity = await load_data("wofs_sparse_prob_", "COMPOSITE_REFL_10CM");
-        let fms =  Object.keys(json);
-        let max_fm_str = fms[fms.length - 1];
-        let max_minutes = parseInt(max_fm_str.substring(3, max_fm_str.length));
-        let plot_d = build_data_object(json);
+	let plot_d = {}
+        build_data_object(0,1,json,plot_d);
         let total_grid_cells = json['fm_0']['MEM_median']['rows'].length;
 
         let lon_array_m = create_coord_array(coord[0], wofs_x_length, resolution);
@@ -51,8 +50,11 @@
         let plot_data = plot_d['0_median'];
         let plot_geom = plot_data[0];
         let plot_coords = plot_data[1];
-        let refl_data, plot_r, total_grid_cells_r, plot_geom_r, plot_coords_r;
+        let refl_data, total_grid_cells_r, plot_geom_r, plot_coords_r;
+	let config = {mapboxAccessToken: "pk.eyJ1IjoiYnBldHprZSIsImEiOiJjbGtsY2I1cTAwNnR1M21wY3kxZnk3NG0xIn0.VBcAZDXsltnUxPWsj6TJPA"};
 
+	let fcst_dates = get_fcst_date_range(5);
+	
         let map_data = {type: "choroplethmapbox",
                 locations: d3.range(total_grid_cells),
                 marker: {line: {width: 0},
@@ -67,7 +69,7 @@
                 geojson: plot_geom};
 
         let init_trace = {
-              x: [180],
+              x: [fcst_dates[Math.floor(msg_file_len/2)]],
               y: [0.25],
               text: ['Click on a probability grid cell to display a spaghetti plot of all ensemble members.'],
               textfont: {size: 16},
@@ -100,20 +102,19 @@
         let layout = {
             title: {text: get_title_timestamp(), x: 0.05, font: {size: 22}},
             mapbox: {
-                style: "open-street-map",
+                style: "dark",
                 center: {lon: domain[2][0], lat: domain[2][1]},
                 zoom: 5},
             showlegend: true,
             grid: {rows: 1, columns: 2, pattern: 'independent'},
             height: 800,
             yaxis2: {range: [0, 0.5], title: {text:'Probability of Tornado', font: {size: 20}}},
-            xaxis2: {tickmode:"linear", tick0: 0, dtick:15, title: {text:'Forecast Minute', font: {size: 20}}},
-
+            xaxis2: {range: [fcst_dates[0], fcst_dates[fcst_dates.length-1]], title: {text:'Forecast Date/Time', font: {size: 20}}, tickformat: '%m-%d %H:%M', tickangle: 35},
             // xaxis2: {range: get_timestamp(5), title: {text:'Forecast Minute', font: {size: 20}}, tickformat: '%H:%M:%S'},
             shapes: [{type: 'line',
-                      x0: 0,
+                      x0: fcst_dates[0],
                       y0: 0,
-                      x1: 0,
+                      x1: fcst_dates[0],
                       y1: 0.5,
                 opacity: 0.3,
                       line: {color: 'rgba(0,128,26,0.68)',
@@ -128,10 +129,16 @@
             }};
 
 
-        Plotly.newPlot(document.getElementById("mapview"), all_traces, layout);
+        Plotly.newPlot(document.getElementById("mapview"), all_traces, layout, config);
+	await load_data_parallel("wofs_sparse_prob_","ML_PREDICTED_TOR",1,msg_file_len,json);
+	build_data_object(1,msg_file_len,json,plot_d);
+	let fms =  Object.keys(json);
+	let max_fm_str = fms[fms.length - 1];
+        let max_minutes = parseInt(max_fm_str.substring(3, max_fm_str.length));
 
+	plot_r = {};
         document.getElementById('refl').addEventListener('change', async function() {
-                plot_r = build_data_object(reflectivity);
+                build_data_object(0,msg_file_len,reflectivity,plot_r);
                 update();
         });
 
@@ -153,7 +160,7 @@
         let trace_values = trace[0]
         total_grid_cells = trace_values['rows'].length
 
-        let minute = parseInt(document.getElementById("forecast_minute").value)
+        let minuteIdx = document.getElementById("forecast_minute").selectedIndex;
         let refl_alpha = document.getElementById("refl_alpha").value / 100
 
         map_data = {type: "choroplethmapbox",
@@ -178,9 +185,12 @@
                 lon: domain[0],
                 lat: domain[1]};
 
+	fcst_dates = get_fcst_date_range(5);
+	layout['xaxis2']['range'] = [fcst_dates[0], fcst_dates[fcst_dates.length-1]];
+	
         layout["title"]["text"] = get_title_timestamp()
-        layout["shapes"][0]["x0"] = minute
-        layout["shapes"][0]["x1"] = minute
+        layout["shapes"][0]["x0"] = fcst_dates[minuteIdx];
+        layout["shapes"][0]["x1"] = fcst_dates[minuteIdx];
 
         if (document.getElementById("refl").checked) {
 
@@ -258,7 +268,7 @@
     function build_traces(trace_data) {
 
         let all_traces = []
-        let forecast_minutes = d3.range(0, max_minutes + 5, 5)
+        let forecast_minutes = get_fcst_date_range(5);
         for (let i=1; i<=trace_data.length; i++) {
             var trace = {
               x: forecast_minutes,
@@ -432,25 +442,41 @@
         return data;
     }
 
-    function build_data_object(data) {
+    async function load_data_parallel(file_prefix, variable, start, end, json_out) {
+	var file_list = get_ens_file_strings(file_prefix, 5, variable).slice(start,end)
+	return Promise.all(file_list.map(url => fetch(url)))
+	    .then(responses => Promise.all(responses.map(response => MessagePack.decodeAsync(response.body))))
+	    .then(messages => {
+		j = start
+		 for (let i=0; i<messages.length; i++) {
+		    let key = "fm_" + String(j*5)
+		     json_out[key] = messages[i]
+		     j += 1
+		}
+	    });
+    }
+    
+    function build_data_object(start,end,data,obj_dict_out) {
 
         let member = document.getElementById("ens_mem").value
-        let obj_dict = {}
-        let coord = transformer.inverse(data['fm_0']['se_coords']);
-        let lon_array_m = create_coord_array(coord[0], wofs_x_length, resolution);
-        let lat_array_m = create_coord_array(coord[1], wofs_y_length, resolution);
-        for (let minutes of d3.range(0, max_minutes + 5, 5)) {
-            let subset = data["fm_" + minutes]["MEM_" + member];
+        let coord = transformer.inverse(data['fm_0']['se_coords'])
+        let lon_array_m = create_coord_array(coord[0], wofs_x_length, resolution)
+        let lat_array_m = create_coord_array(coord[1], wofs_y_length, resolution)
+	for (let i of d3.range(start, end)) {
+	    let minutes = i*5
+            let subset = data["fm_" + minutes]["MEM_" + member]
             let plot_data = create_geom_object(subset["rows"], subset["columns"], lon_array_m, lat_array_m)
-            obj_dict[minutes + "_" + member] = plot_data
+            obj_dict_out[minutes + "_" + member] = plot_data
         }
-        return obj_dict;
     }
+   
 
     function update_mem() {
-        plot_d = build_data_object(json);
+	plot_d = {};
+        build_data_object(0,msg_file_len,json,plot_d);
         if (document.getElementById("refl").checked) {
-            plot_r = build_data_object(reflectivity)
+            plot_r = {};
+	    build_data_object(0,msg_file_len,reflectivity,plot_r);
         }
         update();
     }
@@ -474,7 +500,8 @@ async function update_init_time() {
    fms =  Object.keys(json);
    max_fm_str = fms[fms.length - 1];
    max_minutes = parseInt(max_fm_str.substring(3, max_fm_str.length));
-   plot_d = build_data_object(json);
+   plot_d = {};
+   build_data_object(0,msg_file_len,json,plot_d);
    let spaghetti_data = await spaghetti(cell_i, cell_j)
    spaghetti_traces = build_traces(spaghetti_data)
    await update();
@@ -549,6 +576,26 @@ async function update_init_time() {
         document.getElementById("forecast_minute").value = new_time;
         update();
     }}
+
+  function get_fcst_date_range(interval) {
+      let datetime = document.getElementById("model_run").value;
+      let year = datetime.substring(0, 4);
+      let month = parseInt(datetime.substring(4, 6)) - 1;
+      let day = datetime.substring(6, 8);
+      let start_hour = datetime.substring(8, 10);
+      let start_min = datetime.substring(10, 12);
+      let start_hour_int = parseInt(start_hour);
+      let start_date = new Date(year, month, day, start_hour, start_min);
+      if (start_hour_int <=4)
+      {
+        start_date = new Date(start_date.getTime() + 86400000);
+      }
+      end_date = new Date(start_date.getTime() + 3 * 3600000 + 5 * 60000);
+      let date_range = d3.timeMinutes(start_date,
+				      end_date, interval);
+      return date_range;
+  }
+
 </script>
 <body onload="init()">
 <div id="menubar">
