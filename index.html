@@ -102,6 +102,24 @@
             title: {text: get_title_timestamp(), x: 0.05, font: {size: 22}},
             mapbox: {
                 style: "dark",
+		layers: [
+                   {
+                       sourcetype: "geojson",
+                        source: "data_geojson/geojson-counties-fips.json",
+                        type: "line",
+                        color: "#BA9DD5",
+                        line: {"width": 0.25},
+                        below: "traces"
+                    },
+                    {
+                        sourcetype: "geojson",
+                        source: "data_geojson/cnty_warn_bnds.json",
+                        type: "line",
+                        color: "yellow",
+                        line: {"width": 0.4, opacity: 0.0},
+                        below: "traces"
+                    }
+                ],
                 center: {lon: domain[2][0], lat: domain[2][1]},
                 zoom: 5},
             showlegend: true,
