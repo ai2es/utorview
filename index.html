@@ -143,7 +143,18 @@
                 xaxis: 'x2',
                 yaxis: 'y2',
                 font: {size: 18},
-            }};
+            },
+	     annotations: [
+		 {
+		     y: 1,
+		     yshift: 20,
+		     text: 'Press . key to advance right and , key to advance left',
+		     showarrow: false,
+		     align: "center",
+		     valigh: "bottom",
+		 }
+	     ]
+	};
 
 
         Plotly.newPlot(document.getElementById("mapview"), all_traces, layout, config);
