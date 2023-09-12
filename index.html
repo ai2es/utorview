@@ -25,6 +25,9 @@
         })
 	let msg_file_len = get_ens_file_strings("wofs_sparse_prob_",5,"ML_PREDICTED_TOR").length;
 	let json = {};
+	let progress_bar = document.getElementById('load_prog');
+	let progress_buff = 10;
+	progress_bar.max = msg_file_len*2 + progress_buff;
 	await load_data_parallel("wofs_sparse_prob_","ML_PREDICTED_TOR",0,1,json);
         let wofs_x_length = 300;
         let wofs_y_length = 300;
@@ -181,7 +184,13 @@
             let code = event.code;
             if (code === "Period") {update_time("forward");}
             if (code === "Comma") {update_time("backward");}},
-            false);
+				  false);
+
+	progress_bar.value += progress_buff;
+	//Sleep
+	await new Promise(r => setTimeout(r, 500));
+	//Hide progress bar
+	document.getElementById('loading').style.display = "none";
 
     async function update() {
         let trace = select_trace(json, plot_d)
@@ -461,7 +470,8 @@
 	    .then(responses => Promise.all(responses.map(response => MessagePack.decodeAsync(response.body))))
 	    .then(messages => {
 		j = start
-		 for (let i=0; i<messages.length; i++) {
+		for (let i=0; i<messages.length; i++) {
+		    progress_bar.value += 1
 		    let key = "fm_" + String(j*5)
 		     json_out[key] = messages[i]
 		     j += 1
@@ -612,6 +622,13 @@ async function update_init_time() {
   }
 
 </script>
+<style>
+  progress{  
+    width: 300px;  
+    height: 20px;
+    accent-color: light-purple;
+  }  
+</style>
 <body onload="init()">
 <div id="menubar">
     <label for="model_run">Model Run: </label>
@@ -687,7 +704,10 @@ async function update_init_time() {
     <label for="refl">Reflectivity Overlay</label>
     <input type="range" min="0" max="100" value="10" class="slider" id="refl_alpha">
 </div>
-
+  <div id="loading" style="display: flex; justify-content: flex-end">
+   <label>Loading: </label>
+   <progress id="load_prog" value="0"></progress>
+</div>
 <div id="mapview">
 </div>
 </div>
